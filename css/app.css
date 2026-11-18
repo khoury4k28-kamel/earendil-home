@@ -73,7 +73,9 @@ img { max-width: 100%; display: block; }
   padding: 20px 12px 16px; border-right: 1px solid var(--line); background: #FAFAFA;
 }
 .main { min-width: 0; }
-.brand { text-decoration: none; padding: 0 10px; }
+.brand { text-decoration: none; padding: 0 10px; display: flex; align-items: center; gap: 10px; }
+.brand__logo { width: 30px; height: 30px; flex: none; }
+.gate__logo { width: 44px; height: 44px; margin-bottom: -6px; }
 .brand__name { font-size: 15px; font-weight: 500; color: var(--text-2); }
 .brand__name b { font-weight: 650; color: var(--ink); }
 .tabs-wrap { flex: 1; min-height: 0; overflow-y: auto; }

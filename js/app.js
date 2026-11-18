@@ -35,7 +35,9 @@ const route = () => {
 function shell(tab) {
   return [h("div", { class: "shell" },
     h("aside", { class: "side" },
-      h("a", { class: "brand", href: "#home" }, h("span", { class: "brand__name" }, h("b", null, "Earendil"), " Home")),
+      h("a", { class: "brand", href: "#home" },
+        h("img", { class: "brand__logo", src: "img/logo.svg", alt: "", width: "30", height: "30" }),
+        h("span", { class: "brand__name" }, h("b", null, "Earendil"), " Home")),
       h("nav", { class: "tabs-wrap", "aria-label": "Sections" }, h("div", { class: "tabs" }, TABS.map((t) =>
         h("a", { class: "tab", href: "#" + t.id, "aria-current": t === tab ? "page" : null },
           h("span", null, t.label), t.count && h("span", { class: "tab__n num" }, t.count()))))),
@@ -93,6 +95,7 @@ function gate({ connected, message, signedInAs }) {
   });
 
   app.replaceChildren(h("div", { class: "gate" }, h("div", { class: "gate__box" },
+    h("img", { class: "gate__logo", src: "img/logo.svg", alt: "", width: "44", height: "44" }),
     h("div", null, h("div", { class: "gate__title" }, "Earendil Home"), h("div", { class: "muted" }, "Internal. Team members only.")),
     h("div", { class: "gate__body" },
       error,
