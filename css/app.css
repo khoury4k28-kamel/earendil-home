@@ -73,9 +73,9 @@ img { max-width: 100%; display: block; }
   padding: 20px 12px 16px; border-right: 1px solid var(--line); background: #FAFAFA;
 }
 .main { min-width: 0; }
-.brand { text-decoration: none; padding: 0 8px; display: flex; align-items: center; gap: 12px; }
-.brand__logo { height: 48px; width: auto; flex: none; }
-.gate__logo { height: 60px; width: auto; align-self: flex-start; margin-bottom: -6px; }
+.brand { text-decoration: none; padding: 0 10px; display: flex; align-items: center; gap: 10px; }
+.brand__logo { height: 34px; width: auto; flex: none; }
+.gate__logo { height: 44px; width: auto; align-self: flex-start; margin-bottom: -6px; }
 .brand__name { font-size: 16px; font-weight: 500; color: var(--text-2); line-height: 1.2; }
 .brand__name b { font-weight: 650; color: var(--ink); }
 .tabs-wrap { flex: 1; min-height: 0; overflow-y: auto; }
@@ -342,7 +342,7 @@ td input[type="checkbox"], th input[type="checkbox"] { width: 16px; height: 16px
   .shell { display: block; }
   .side { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; padding: 12px var(--gutter) 0; border-right: 0; border-bottom: 1px solid var(--line); background: var(--bg); }
   .brand, .side__foot { padding: 0; }
-  .brand__logo { height: 38px; width: auto; }
+  .brand__logo { height: 28px; width: auto; }
   .tabs-wrap { order: 3; flex: 0 0 100%; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
   .tabs-wrap::-webkit-scrollbar { display: none; }
   .tabs { flex-direction: row; gap: 4px; min-width: max-content; padding-bottom: 10px; }
