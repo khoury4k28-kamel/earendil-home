@@ -22,8 +22,24 @@ returns boolean language sql stable security definer set search_path = '' as $$
       and u.email_confirmed_at is not null
   );
 $$;
+-- Members with role 'reader' can see everything and change nothing. The vault's
+-- daily export signs in as one, so no all-powerful key is needed anywhere.
+create or replace function public.can_write()
+returns boolean language sql stable security definer set search_path = '' as $$
+  select exists (
+    select 1
+    from auth.users u
+    join public.members m on lower(m.email) = lower(u.email)
+    where u.id = (select auth.uid())
+      and u.email_confirmed_at is not null
+      and m.role <> 'reader'
+  );
+$$;
+
 revoke execute on function public.is_member() from public, anon;
 grant execute on function public.is_member() to authenticated;
+revoke execute on function public.can_write() from public, anon;
+grant execute on function public.can_write() to authenticated;
 
 -- ---------------------------------------------------------------- tables
 create table if not exists public.settings (
@@ -195,9 +211,9 @@ begin
     execute format('drop policy if exists "team edits" on public.%I', t);
     execute format('drop policy if exists "team deletes" on public.%I', t);
     execute format('create policy "team reads" on public.%I for select to authenticated using ((select public.is_member()))', t);
-    execute format('create policy "team adds" on public.%I for insert to authenticated with check ((select public.is_member()))', t);
-    execute format('create policy "team edits" on public.%I for update to authenticated using ((select public.is_member())) with check ((select public.is_member()))', t);
-    execute format('create policy "team deletes" on public.%I for delete to authenticated using ((select public.is_member()))', t);
+    execute format('create policy "team adds" on public.%I for insert to authenticated with check ((select public.can_write()))', t);
+    execute format('create policy "team edits" on public.%I for update to authenticated using ((select public.can_write())) with check ((select public.can_write()))', t);
+    execute format('create policy "team deletes" on public.%I for delete to authenticated using ((select public.can_write()))', t);
   end loop;
 end $$;
 
