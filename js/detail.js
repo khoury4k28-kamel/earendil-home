@@ -142,7 +142,7 @@ export function openDeal(id) {
     const outside = (d.contact_ids || []).map((c) => byId("contacts", c)).filter(Boolean);
     const tasks = state.tasks.filter((t) => t.deal_id === id);
     return drawerFrame(
-      { eyebrow: [d.kind, d.region].filter(Boolean).join(" · ") || "Deal", title: d.name, sub: d.organisation, actions: editBtn("deals", d) },
+      { eyebrow: [d.kind && d.kind[0].toUpperCase() + d.kind.slice(1), d.region].filter(Boolean).join(" · ") || "Deal", title: d.name, sub: d.organisation, actions: editBtn("deals", d) },
       block("Stage",
         h("div", { class: "stage-pick" }, STAGES.map((s) => h("button", {
           type: "button", "aria-pressed": String(d.stage === s.value),
@@ -163,7 +163,7 @@ export function openDeal(id) {
         kv([
           ["Next step", d.next_step || h("span", { class: "muted" }, "Not set")],
           ["Last contact", d.last_touch
-            ? h("span", null, fmtDate(d.last_touch), stalled && h("span", { class: "stalled" }, ` · Stalled ${stalled} d`))
+            ? h("span", { class: "deal__left" }, fmtDate(d.last_touch), stalled && h("span", { class: "stalled" }, `Stalled ${stalled}d`))
             : h("span", { class: "muted" }, "None logged")],
         ]),
         d.summary && h("div", { class: "prose" }, d.summary)),

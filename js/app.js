@@ -33,9 +33,7 @@ const route = () => {
 function shell(tab) {
   return [
     h("header", { class: "top" },
-      h("a", { class: "brand", href: "#home", "aria-label": "Earendil Home" },
-        h("span", { class: "brand__chip" }, h("img", { src: "img/earendil-mark.svg", alt: "" })),
-        h("span", { class: "brand__name" }, "Earendil ", h("span", null, "Home"))),
+      h("a", { class: "brand", href: "#home" }, h("span", { class: "brand__name" }, h("b", null, "Earendil"), " Home")),
       h("div", { class: "top__right" },
         h("span", { class: "top__date" }, todayLabel()),
         state.mode === "live"
@@ -90,8 +88,7 @@ function gate({ connected, message, signedInAs }) {
   });
 
   app.replaceChildren(h("div", { class: "gate" }, h("div", { class: "gate__box" },
-    h("div", { class: "gate__head" }, h("img", { src: "img/earendil-mark.svg", alt: "" }),
-      h("div", null, h("div", { class: "gate__title" }, "Earendil Home"), h("div", { class: "small", style: "opacity:.75" }, "Internal. Team members only."))),
+    h("div", null, h("div", { class: "gate__title" }, "Earendil Home"), h("div", { class: "muted" }, "Internal. Team members only.")),
     h("div", { class: "gate__body" },
       error,
       !connected && h("div", { class: "empty" }, h("div", null, h("b", null, "Not connected yet."), " The hub's database hasn't been switched on. Sign-in opens once it is.")),

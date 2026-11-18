@@ -8,4 +8,4 @@ This repository holds the page's code only. All data lives in a private database
 - `js/config.js`: the database address and its publishable key (both public by design).
 - `supabase/schema.sql`: the database structure and access rules. It contains no data.
 
-Fonts: Rajdhani, SIL Open Font License.
+Font: Inter, SIL Open Font License.

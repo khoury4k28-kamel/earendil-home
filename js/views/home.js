@@ -60,10 +60,10 @@ function dealsBlock() {
           : "Nothing signed yet.")),
       h("div", { class: "stagebars" }, STAGES.map((s) => {
         const n = state.deals.filter((d) => d.stage === s.value).length;
-        return h("div", { class: "stagebar" + (s.value === "signed" || s.value === "closed" ? " stagebar--done" : "") },
+        return h("div", { class: "stagebar" },
           h("span", null, s.label),
-          h("span", { class: "stagebar__track" }, h("span", { class: "stagebar__fill", style: `display:block;width:${(n / max) * 100}%` })),
-          h("span", { class: "num", style: "text-align:right" }, n));
+          h("span", { class: "stagebar__track" }, h("span", { class: "stagebar__fill c-" + s.value, style: `display:block;width:${(n / max) * 100}%` })),
+          h("span", { class: "num muted", style: "text-align:right" }, n));
       }))));
 }
 
@@ -102,8 +102,7 @@ export function milestoneRows(list) {
   return h("ul", { class: "rows" }, list.map((m) => h("li", { class: "row" },
     h("span", { class: "row__date" }, m.date_label || fmtDate(m.date) || "No date"),
     h("button", { class: "row__main rowbtn", type: "button", onclick: () => editRecord("milestones", m) },
-      h("div", { class: "row__title" }, h("span", { class: "sq" + (m.status === "done" ? "" : " sq--open") }), m.title)),
-    m.kind === "external" && h("span", { class: "tag", title: "An outside event we track" }, "Outside"))));
+      h("div", { class: "row__title" }, h("span", { class: "sq" + (m.kind === "external" ? " sq--ring" : m.status === "done" ? "" : " sq--open"), title: m.kind === "external" ? "An outside event we track" : null }), m.title)))));
 }
 
 function milestonesBlock() {
@@ -114,7 +113,8 @@ function milestonesBlock() {
   const p = panel("Milestones and roadmap", addBtn("Add milestone", "milestones", { status: "upcoming", kind: "company" }),
     h("div", { class: "two-col" },
       h("div", { class: "block" }, h("div", { class: "caps" }, `Ahead · ${upcoming.length}`),
-        upcoming.length ? milestoneRows(upcoming) : h("div", { class: "muted small" }, "Nothing on the roadmap yet.")),
+        upcoming.length ? milestoneRows(upcoming) : h("div", { class: "muted small" }, "Nothing on the roadmap yet."),
+        all.some((m) => m.kind === "external") && h("div", { class: "row__meta" }, h("span", { class: "sq sq--ring" }), "An outside event we track")),
       h("div", { class: "block" }, h("div", { class: "caps" }, `Done · ${done.length}`),
         done.length ? milestoneRows(done) : h("div", { class: "muted small" }, "Nothing marked done yet."))));
   p.classList.add("span-8");

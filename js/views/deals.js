@@ -1,7 +1,7 @@
 // Deal Tracker: every deal the company is working on, as a board by stage or
 // as a table. Open a deal to see who's involved, its size and its progress.
 
-import { h, avatar, fmtDate, fmtRange, plural, refresh } from "../ui.js";
+import { h, avatar, letterAvatar, fmtDate, fmtMoney, fmtRange, plural, refresh } from "../ui.js";
 import { state, update, isOpenDeal, personName, sortByName } from "../store.js";
 import { STAGES, stageLabel } from "../schema.js";
 import { editRecord, openDeal, stalledDays } from "../detail.js";
@@ -14,8 +14,9 @@ function setMode(m) {
   refresh();
 }
 
-function stat(label, value, note) {
-  return h("div", { class: "stat" }, h("div", { class: "eyebrow" }, label), h("div", { class: "stat__v" }, value), note && h("div", { class: "stat__note" }, note));
+function stat(label, value, note, red) {
+  return h("div", { class: "stat", title: note || null },
+    h("div", { class: "stat__v" + (red ? " stat__v--red" : "") }, value), h("div", { class: "stat__note" }, label));
 }
 
 function summary() {
@@ -26,12 +27,16 @@ function summary() {
   const stalled = open.filter((d) => stalledDays(d) != null).length;
   const noDate = open.filter((d) => !d.last_touch).length;
   const done = state.deals.length - open.length;
-  return h("div", { class: "stats" },
-    stat("Sized pipeline", sized.length ? fmtRange(lo, hi) : "None yet", `Estimates on ${sized.length} of ${plural(open.length, "open deal")}`),
-    stat("Open", open.length, "Lead to negotiating"),
-    stat("Stalled", stalled, "No contact in 30 days" + (noDate ? `. ${noDate} more have no contact date` : "")),
-    stat("No size yet", open.length - sized.length, "Open deals without an estimate"),
-    stat("Signed or closed", done, done ? "" : "Nothing signed yet"));
+  const total = state.deals.length || 1;
+  return h("div", { class: "block" },
+    h("div", { class: "stats" },
+      stat("in pipeline", sized.length ? fmtRange(lo, hi) : fmtMoney(0), `Estimates on ${sized.length} of ${plural(open.length, "open deal")}`),
+      stat("open", open.length, "Lead to negotiating"),
+      stat("stalled", stalled, "No contact in 30 days" + (noDate ? `. ${noDate} more have no contact date logged` : ""), stalled > 0),
+      stat("no size yet", open.length - sized.length, "Open deals without an estimate"),
+      stat("signed or closed", done)),
+    h("div", { class: "stagebar-all", role: "img", "aria-label": "Deals by stage" },
+      STAGES.map((s) => h("span", { class: "c-" + s.value, title: s.label, style: `width:${(state.deals.filter((d) => (d.stage || "lead") === s.value).length / total) * 100}%` }))));
 }
 
 function dealCard(d) {
@@ -44,13 +49,15 @@ function dealCard(d) {
     onkeydown: (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(); } },
     ondragstart: (e) => { e.dataTransfer.setData("text/plain", d.id); e.dataTransfer.effectAllowed = "move"; },
   },
-    h("div", { class: "deal__name" }, d.name),
-    h("div", { class: "deal__meta" }, [d.kind && d.kind[0].toUpperCase() + d.kind.slice(1), d.region].filter(Boolean).join(" · ")),
+    h("div", { class: "deal__top" }, letterAvatar(d.organisation || d.name),
+      h("div", { style: "min-width:0;flex:1" },
+        h("div", { class: "deal__name" }, d.name),
+        h("div", { class: "deal__meta" }, [d.kind && d.kind[0].toUpperCase() + d.kind.slice(1), d.region].filter(Boolean).join(" · ")),
+        size && h("div", { class: "deal__size num" }, size))),
     h("div", { class: "deal__foot" },
-      h("span", { class: "num" }, size || h("span", { class: "muted" }, "No size yet")),
-      d.owner_id && personName(d.owner_id) ? avatar(personName(d.owner_id), "s") : h("span", { class: "muted small" }, "No owner")),
-    (stalled || d.to_confirm) && h("div", { class: "deal__foot" },
-      stalled ? h("span", { class: "stalled" }, h("span", { class: "sq" }), `Stalled ${stalled} d`) : h("span"),
+      h("span", { class: "deal__left" },
+        d.owner_id && personName(d.owner_id) ? avatar(personName(d.owner_id), "s") : h("span", { class: "muted" }, "No owner"),
+        stalled ? h("span", { class: "stalled" }, `${stalled}d`) : null),
       d.to_confirm && h("span", { class: "tag" }, "To confirm")));
 }
 
@@ -59,11 +66,11 @@ function board() {
     const deals = sortByName(state.deals.filter((d) => (d.stage || "lead") === s.value));
     const lo = deals.reduce((t, d) => t + (d.size_low ?? d.size_high ?? 0), 0);
     const hi = deals.reduce((t, d) => t + (d.size_high ?? d.size_low ?? 0), 0);
-    const col = h("section", { class: "col" + (s.value === "signed" ? " col--signed" : "") },
+    const col = h("section", { class: "col col--" + s.value },
       h("div", { class: "col__head" },
-        h("h2", { class: "caps" }, `${s.label} · ${deals.length}`),
-        h("span", { class: "num small" }, hi ? fmtRange(lo, hi) : "")),
-      h("div", { class: "col__body" }, deals.length ? deals.map(dealCard) : h("div", { class: "col__none" }, "None")));
+        h("h2", { class: "col__title" }, h("span", { class: "dot c-" + s.value }), s.label, h("span", { class: "n" }, deals.length)),
+        h("span", { class: "col__sum num" }, hi ? fmtRange(lo, hi) : "")),
+      h("div", { class: "col__body" }, deals.length ? deals.map(dealCard) : h("div", { class: "col__none" }, "—")));
     col.addEventListener("dragover", (e) => { e.preventDefault(); col.classList.add("is-over"); });
     col.addEventListener("dragleave", () => col.classList.remove("is-over"));
     col.addEventListener("drop", (e) => {
@@ -91,7 +98,7 @@ function table() {
         h("td", { class: "tight num" }, fmtRange(d.size_low, d.size_high) || h("span", { class: "muted" }, "Not set")),
         h("td", { class: "tight" }, personName(d.owner_id) || h("span", { class: "muted" }, "Nobody yet")),
         h("td", { class: "tight" }, d.last_touch ? fmtDate(d.last_touch) : h("span", { class: "muted" }, "None logged"),
-          stalled && h("div", { class: "stalled small" }, `Stalled ${stalled} d`)),
+          stalled && h("div", { class: "stalled small" }, `Stalled ${stalled}d`)),
         h("td", null, d.next_step || h("span", { class: "muted" }, "Not set")));
     }))));
 }

@@ -79,8 +79,21 @@ export function initials(name) {
 export const plural = (n, one, many) => `${n} ${n === 1 ? one : many || one + "s"}`;
 
 // ---------- small components ----------
+// Each person gets one steady colour, picked from their name.
+const PERSON_COLORS = ["#2EA567", "#3E63DD", "#E5733A", "#8E4EC6", "#D6409F", "#0E9AA7", "#C9792B", "#5B6AD0"];
+const LETTER_COLORS = [["#FFEDE0", "#C2500E"], ["#E8EEFF", "#2F4FB8"], ["#E9F7EF", "#1E7A4C"], ["#F4ECFC", "#6F38A6"], ["#FDEAF3", "#B02A76"], ["#FFF4D6", "#8A6100"]];
+function pick(list, text) {
+  let n = 0;
+  for (const ch of String(text || "")) n = (n * 31 + ch.codePointAt(0)) >>> 0;
+  return list[n % list.length];
+}
 export function avatar(name, size) {
-  return h("span", { class: "avatar" + (size ? " avatar--" + size : ""), "aria-hidden": "true" }, initials(name));
+  return h("span", { class: "avatar" + (size ? " avatar--" + size : ""), style: `background:${pick(PERSON_COLORS, name)}`, "aria-hidden": "true" }, initials(name));
+}
+// A square letter tile for a company or deal.
+export function letterAvatar(name) {
+  const [bg, fg] = pick(LETTER_COLORS, name);
+  return h("span", { class: "lavatar", style: `background:${bg};color:${fg}`, "aria-hidden": "true" }, (String(name || "?").trim()[0] || "?").toUpperCase());
 }
 export function emptyState(title, text, action) {
   return h("div", { class: "empty" }, h("div", null, h("b", null, title), text ? " " + text : ""), action);
