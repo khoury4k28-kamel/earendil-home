@@ -36,7 +36,7 @@ function shell(tab) {
   return [h("div", { class: "shell" },
     h("aside", { class: "side" },
       h("a", { class: "brand", href: "#home" },
-        h("img", { class: "brand__logo", src: "img/logo.svg", alt: "", width: "48", height: "48" }),
+        h("img", { class: "brand__logo", src: "img/logo.svg", alt: "", width: "35", height: "48" }),
         h("span", { class: "brand__name" }, h("b", null, "Earendil"), " Home")),
       h("nav", { class: "tabs-wrap", "aria-label": "Sections" }, h("div", { class: "tabs" }, TABS.map((t) =>
         h("a", { class: "tab", href: "#" + t.id, "aria-current": t === tab ? "page" : null },
@@ -95,7 +95,7 @@ function gate({ connected, message, signedInAs }) {
   });
 
   app.replaceChildren(h("div", { class: "gate" }, h("div", { class: "gate__box" },
-    h("img", { class: "gate__logo", src: "img/logo.svg", alt: "", width: "60", height: "60" }),
+    h("img", { class: "gate__logo", src: "img/logo.svg", alt: "", width: "44", height: "60" }),
     h("div", null, h("div", { class: "gate__title" }, "Earendil Home"), h("div", { class: "muted" }, "Internal. Team members only.")),
     h("div", { class: "gate__body" },
       error,
