@@ -10,11 +10,16 @@ create table if not exists public.members (
   added_at timestamptz not null default now()
 );
 
+-- True only when the signed-in ACCOUNT (not just an address in a token) has a
+-- verified email that is on the team list.
 create or replace function public.is_member()
 returns boolean language sql stable security definer set search_path = '' as $$
   select exists (
-    select 1 from public.members m
-    where lower(m.email) = lower((select auth.jwt() ->> 'email'))
+    select 1
+    from auth.users u
+    join public.members m on lower(m.email) = lower(u.email)
+    where u.id = (select auth.uid())
+      and u.email_confirmed_at is not null
   );
 $$;
 revoke execute on function public.is_member() from public, anon;
@@ -141,6 +146,26 @@ begin
     execute format('create trigger touch before insert or update on public.%I for each row execute function public.touch_row()', t);
   end loop;
 end $$;
+
+-- Notes are signed by the database, not the browser: the author is the
+-- signed-in person and the time is the database's clock. Neither can be edited.
+create or replace function public.stamp_note()
+returns trigger language plpgsql security definer set search_path = '' as $$
+declare who text := (select u.email from auth.users u where u.id = (select auth.uid()));
+begin
+  if tg_op = 'UPDATE' then
+    new.author := old.author;
+    new.created_at := old.created_at;
+  elsif who is not null then
+    new.created_at := now();
+    new.author := coalesce((select p.name from public.people p where lower(p.email) = lower(who) limit 1), who);
+  end if;
+  return new;
+end;
+$$;
+drop trigger if exists stamp on public.activity;
+create trigger stamp before insert or update on public.activity
+  for each row execute function public.stamp_note();
 
 -- ---------------------------------------------------------------- access rules
 -- Nobody who isn't signed in gets anything. Signed-in people get rows only if

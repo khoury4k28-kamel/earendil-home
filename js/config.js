@@ -12,6 +12,7 @@ export const config = {
   // seed file instead of the database. Changes made in preview are not saved.
   previewSeed: "../vault/_admin/seed.json",
 
-  // Supabase client library, pinned to an exact version.
-  supabaseLib: "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.118.0/dist/umd/supabase.min.js",
+  // Supabase client library, version 2.118.0, taken from the official npm
+  // package and served from this site, so no outside server is trusted for code.
+  supabaseLib: "js/vendor/supabase-2.118.0.js",
 };

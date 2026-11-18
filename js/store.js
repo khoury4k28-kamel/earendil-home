@@ -85,6 +85,8 @@ export async function saveSetting(key, value) {
   }
 }
 export function addNote(entityType, entityId, body) {
+  // author and created_at are sent so the note shows at once; the database
+  // replaces both with the signed-in person and its own clock.
   return create("activity", {
     entity_type: entityType, entity_id: entityId, body,
     author: state.me.label || "Team", source: "manual", created_at: new Date().toISOString(),
