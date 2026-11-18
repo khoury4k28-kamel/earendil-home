@@ -81,7 +81,7 @@ function notesBlock(type, id) {
     notes.length
       ? h("div", null, notes.map((n) => h("div", { class: "note" },
           h("div", { class: "prose" }, n.body),
-          h("div", { class: "row__meta" }, [n.author, fmtDateTime(n.created_at), n.source && n.source !== "manual" && "via " + n.source].filter(Boolean).join(" · ")))))
+          h("div", { class: "row__meta", title: n.author_email || null }, [n.author, fmtDateTime(n.created_at), n.source && n.source !== "manual" && "via " + n.source].filter(Boolean).join(" · ")))))
       : h("div", { class: "muted small" }, "No notes yet."));
 }
 

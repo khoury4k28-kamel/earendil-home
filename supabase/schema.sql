@@ -122,7 +122,9 @@ create table if not exists public.activity (
   entity_type text not null,
   entity_id text not null,
   body text not null,
-  author text, source text default 'manual',
+  author text,        -- display name at the time of writing
+  author_email text,  -- the verified sign-in email: the record of who wrote it
+  source text default 'manual',
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   updated_by text
@@ -147,17 +149,21 @@ begin
   end loop;
 end $$;
 
--- Notes are signed by the database, not the browser: the author is the
--- signed-in person and the time is the database's clock. Neither can be edited.
+-- Notes are signed by the database, not the browser. author_email is the
+-- verified sign-in email and is the record of who wrote a note; author is only
+-- a display name looked up at the time. Neither can be edited afterwards.
+alter table public.activity add column if not exists author_email text;
 create or replace function public.stamp_note()
 returns trigger language plpgsql security definer set search_path = '' as $$
 declare who text := (select u.email from auth.users u where u.id = (select auth.uid()));
 begin
   if tg_op = 'UPDATE' then
     new.author := old.author;
+    new.author_email := old.author_email;
     new.created_at := old.created_at;
   elsif who is not null then
     new.created_at := now();
+    new.author_email := who;
     new.author := coalesce((select p.name from public.people p where lower(p.email) = lower(who) limit 1), who);
   end if;
   return new;
