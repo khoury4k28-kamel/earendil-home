@@ -30,21 +30,26 @@ const route = () => {
   return TABS.find((t) => t.id === id) || TABS.find((t) => t.id === "home");
 };
 
+// The sections run down a sidebar on the left. On a phone the sidebar folds
+// into a strip across the top.
 function shell(tab) {
-  return [
-    h("header", { class: "top" },
+  return [h("div", { class: "shell" },
+    h("aside", { class: "side" },
       h("a", { class: "brand", href: "#home" }, h("span", { class: "brand__name" }, h("b", null, "Earendil"), " Home")),
-      h("div", { class: "top__right" },
-        h("span", { class: "top__date" }, todayLabel()),
+      h("nav", { class: "tabs-wrap", "aria-label": "Sections" }, h("div", { class: "tabs" }, TABS.map((t) =>
+        h("a", { class: "tab", href: "#" + t.id, "aria-current": t === tab ? "page" : null },
+          h("span", null, t.label), t.count && h("span", { class: "tab__n num" }, t.count()))))),
+      h("div", { class: "side__foot" },
         state.mode === "live"
-          ? h("button", { class: "btn btn--small", type: "button", onclick: accountDialog }, state.me.name || "Account")
+          ? h("button", { class: "side__account", type: "button", onclick: accountDialog },
+              h("span", { class: "side__who" }, state.me.name || state.me.email || "Account"), h("span", { class: "muted small" }, "Account"))
           : h("span", { class: "tag tag--solid" }, "Preview"))),
-    h("nav", { class: "tabs-wrap", "aria-label": "Sections" }, h("div", { class: "tabs" }, TABS.map((t) =>
-      h("a", { class: "tab", href: "#" + t.id, "aria-current": t === tab ? "page" : null },
-        t.label, t.count && h("span", { class: "tab__n num" }, t.count()))))),
-    notice && h("div", { class: "notice" }, h("b", null, notice[0]), notice[1]),
-    tab.view.render(),
-  ];
+    h("div", { class: "main" },
+      h("header", { class: "top" },
+        h("span", { class: "top__where" }, tab.label),
+        h("span", { class: "top__date" }, todayLabel())),
+      notice && h("div", { class: "notice" }, h("b", null, notice[0]), notice[1]),
+      tab.view.render()))];
 }
 
 function render() {
