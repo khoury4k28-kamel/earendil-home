@@ -71,6 +71,15 @@ export function fmtRange(lo, hi) {
   const [d2, u2] = unit(hi);
   return u1 === u2 ? `$${trim(lo / d1)}–${trim(hi / d2)}${u2}` : `${fmtMoney(lo)}–${fmtMoney(hi)}`;
 }
+// "5 min ago", "3 h ago", "2 d ago", then the date.
+export function ago(iso) {
+  const s = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (isNaN(s)) return "";
+  if (s < 60) return "now";
+  if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
+  return s < 7 * 86400 ? `${Math.floor(s / 86400)} d ago` : fmtDate(iso);
+}
 export function initials(name) {
   const parts = String(name || "").trim().split(/\s+/).filter(Boolean);
   if (!parts.length) return "?";

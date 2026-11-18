@@ -1,7 +1,7 @@
 // Teams: who reports to whom, then each team's strategy, goals, milestones
 // and tasks.
 
-import { h, avatar, emptyState, kv, plural, panel } from "../ui.js";
+import { h, avatar, emptyState, kv, panel } from "../ui.js";
 import { state, sortByName, byId } from "../store.js";
 import { editRecord, addBtn, personChip, openPerson, taskList } from "../detail.js";
 import { goalsList, milestoneRows } from "./home.js";
@@ -23,7 +23,7 @@ function reportingLines() {
   if (!anyLine) {
     return [
       h("div", { class: "chips" }, sortByName(people).map((p) => personChip(p.id))),
-      h("div", { class: "small sub" }, "No reporting lines set yet. Open a person, choose Edit, and fill in “Reports to” to draw the chart."),
+      h("div", { class: "small sub" }, "No reporting lines yet. Set “Reports to” on a person to draw the chart."),
     ];
   }
   const seen = new Set();
@@ -58,13 +58,12 @@ export function render() {
   const unassigned = sortByName(state.people.filter((p) => !p.team_id || !byId("teams", p.team_id)));
   return h("main", { class: "page" },
     h("div", { class: "page-head" },
-      h("div", { class: "page-head__text" }, h("h1", { class: "h1" }, "Teams"),
-        h("div", { class: "sub" }, `${plural(teams.length, "team")}. Each team sets its strategy and logs its goals, milestones and tasks here.`)),
+      h("h1", { class: "h1" }, "Teams"),
       h("button", { class: "btn btn--primary", type: "button", onclick: () => editRecord("teams", null) }, "Add team")),
     panel("Who reports to whom", null, reportingLines()),
     teams.length
       ? h("div", { class: "grid" }, teams.map(teamPanel))
-      : emptyState("No teams yet.", "Add the first team, then put people in it from their profile.",
+      : emptyState("No teams yet.", "",
           h("button", { class: "btn", type: "button", onclick: () => editRecord("teams", null) }, "Add the first team")),
     teams.length > 0 && unassigned.length > 0 && panel(`Not in a team yet · ${unassigned.length}`, null,
       h("div", { class: "chips" }, unassigned.map((p) => personChip(p.id)))));

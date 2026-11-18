@@ -4,7 +4,7 @@
 import { h, avatar, letterAvatar, fmtDate, fmtMoney, fmtRange, plural, refresh } from "../ui.js";
 import { state, update, isOpenDeal, personName, sortByName } from "../store.js";
 import { STAGES, stageLabel } from "../schema.js";
-import { editRecord, openDeal, stalledDays } from "../detail.js";
+import { editRecord, openDeal, stalledDays, setStage } from "../detail.js";
 
 let mode = "board";
 try { mode = localStorage.getItem("deals-view") || "board"; } catch { /* storage may be blocked */ }
@@ -19,7 +19,7 @@ function stat(label, value, note, red) {
     h("div", { class: "stat__v" + (red ? " stat__v--red" : "") }, value), h("div", { class: "stat__note" }, label));
 }
 
-function summary() {
+export function summary() {
   const open = state.deals.filter(isOpenDeal);
   const sized = open.filter((d) => d.size_low != null || d.size_high != null);
   const lo = sized.reduce((s, d) => s + (d.size_low ?? d.size_high), 0);
@@ -57,8 +57,7 @@ function dealCard(d) {
     h("div", { class: "deal__foot" },
       h("span", { class: "deal__left" },
         d.owner_id && personName(d.owner_id) ? avatar(personName(d.owner_id), "s") : h("span", { class: "muted" }, "No owner"),
-        stalled ? h("span", { class: "stalled" }, `${stalled}d`) : null),
-      d.to_confirm && h("span", { class: "tag" }, "To confirm")));
+        stalled ? h("span", { class: "stalled" }, `${stalled}d`) : null)));
 }
 
 function board() {
@@ -78,7 +77,7 @@ function board() {
       col.classList.remove("is-over");
       const id = e.dataTransfer.getData("text/plain");
       const deal = state.deals.find((d) => d.id === id);
-      if (deal && deal.stage !== s.value) update("deals", id, { stage: s.value });
+      if (deal) setStage(id, s.value);
     });
     return col;
   })));
@@ -106,8 +105,7 @@ function table() {
 export function render() {
   return h("main", { class: "page" },
     h("div", { class: "page-head" },
-      h("div", { class: "page-head__text" }, h("h1", { class: "h1" }, "Deal Tracker"),
-        h("div", { class: "sub" }, "Everything the company is working on: who's involved, how big, and where it stands. Anyone on the team can edit.")),
+      h("h1", { class: "h1" }, "Deal Tracker"),
       h("div", { class: "actions" },
         h("div", { class: "seg", role: "group", "aria-label": "View" },
           h("button", { type: "button", "aria-pressed": String(mode === "board"), onclick: () => setMode("board") }, "Board"),
@@ -115,7 +113,6 @@ export function render() {
         h("button", { class: "btn btn--primary", type: "button", onclick: () => editRecord("deals", null, { stage: "lead", kind: "customer", people_ids: [], contact_ids: [] }) }, "Add deal"))),
     summary(),
     state.deals.length === 0
-      ? h("div", { class: "empty" }, h("div", null, h("b", null, "No deals yet."), " Add the first one to start the tracker."))
-      : mode === "table" ? table() : board(),
-    mode === "board" && state.deals.length > 0 && h("div", { class: "small muted" }, "Drag a card to another column to change its stage, or open it and pick the stage there."));
+      ? h("div", { class: "empty" }, h("div", null, h("b", null, "No deals yet.")))
+      : mode === "table" ? table() : board());
 }

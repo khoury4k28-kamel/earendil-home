@@ -1,22 +1,30 @@
-// Home: the company-wide page. Mission and who we are, values, targets,
-// milestones to 2027, company to-dos, and where the deals stand.
+// Home: what needs doing today. A pipeline strip, the things that need
+// attention with one-click actions, to-dos, what's coming up and what each
+// person is on. Company reference (mission, values, products) is one click away.
 
-import { h, panel, emptyState, fmtDate, parseDate, plural, todayISO } from "../ui.js";
-import { state, saveSetting, isOpenDeal } from "../store.js";
+import {
+  h, avatar, fmtDate, parseDate, todayISO, todayLabel, daysSince, ago, refresh, toast,
+  openDrawer, drawerFrame, block, kv,
+} from "../ui.js";
+import { state, saveSetting, isOpenDeal, update, create, byId } from "../store.js";
 import { openForm } from "../form.js";
-import { STAGES } from "../schema.js";
-import { editRecord, addBtn, taskList, openDeal } from "../detail.js";
+import { editRecord, taskList, openDeal, openPerson, openContact, dealIssues } from "../detail.js";
+import { summary as pipeline } from "./deals.js";
 
+let showAll = false;
+const ATTENTION_LIMIT = 6;
+
+// ---------- company reference, in a side panel ----------
 function editCompany() {
   const s = state.settings;
   openForm({
-    title: "Edit mission and who we are",
+    title: "Edit mission and values",
     record: { mission: s.mission, tagline: s.tagline, about: s.about, values: s.values || [] },
     fields: [
-      { key: "mission", label: "Mission statement", type: "textarea", required: true },
+      { key: "mission", label: "Mission", type: "textarea", required: true },
       { key: "tagline", label: "Line", wide: true },
       { key: "about", label: "Who we are", type: "textarea" },
-      { key: "values", label: "Values", type: "lines", placeholder: "One value per line", hint: "One per line. A short phrase, then what it means in practice." },
+      { key: "values", label: "Values", type: "lines", placeholder: "One per line" },
     ],
     onSave: async (v) => {
       for (const key of ["mission", "tagline", "about", "values"]) {
@@ -26,47 +34,28 @@ function editCompany() {
   });
 }
 
-function greeting() {
-  const hour = new Date().getHours();
-  const part = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
-  const first = (state.me.name || "").split(" ")[0];
-  return first ? `${part}, ${first}.` : `${part}.`;
+export function openAbout() {
+  openDrawer(() => {
+    const s = state.settings;
+    const products = s.products || [];
+    const groups = ["Train", "Detect", "Intercept"].filter((g) => products.some((p) => p.group === g));
+    return drawerFrame(
+      { eyebrow: "Earendil", title: s.mission || "Mission not written yet", sub: s.tagline,
+        actions: h("button", { class: "btn btn--small", type: "button", onclick: editCompany }, "Edit") },
+      s.about && block("Who we are", h("div", { class: "prose" }, s.about), kv((s.facts || []).map((f) => [f.label, f.value]))),
+      block("Values", (s.values || []).length
+        ? h("ul", { class: "rows" }, s.values.map((v) => h("li", { class: "row" }, h("span", { class: "row__title" }, v))))
+        : h("button", { class: "link", type: "button", onclick: editCompany }, "Write the values")),
+      groups.length > 0 && block("What we sell", groups.map((g) => h("div", { class: "block" },
+        h("div", { class: "caps" }, g),
+        h("ul", { class: "rows" }, products.filter((p) => p.group === g).map((p) => h("li", { class: "row" },
+          h("div", { class: "row__main" }, h("div", { class: "row__title" }, p.name), h("div", { class: "row__meta" }, p.note)))))))),
+      (s.regions || []).length > 0 && block("Where", h("ul", { class: "rows" }, s.regions.map((r) => h("li", { class: "row" },
+        h("div", { class: "row__main" }, h("div", { class: "row__title" }, r.name), h("div", { class: "row__meta" }, r.note)))))));
+  });
 }
 
-function missionBlock() {
-  const s = state.settings;
-  return h("section", { class: "mission span-8" },
-    h("div", { class: "page-head" }, h("div", { class: "eyebrow" }, "Our mission"),
-      h("button", { class: "btn btn--small", type: "button", onclick: editCompany }, "Edit")),
-    s.mission ? h("p", { class: "mission__line" }, s.mission) : emptyState("No mission statement yet.", "", null),
-    s.tagline && h("p", { class: "mission__tag" }, s.tagline),
-    s.about && h("p", { class: "mission__about" }, s.about),
-    (s.facts || []).length > 0 && h("div", { class: "facts" }, s.facts.map((f) =>
-      h("div", { class: "fact" }, h("div", { class: "eyebrow" }, f.label), h("div", { class: "fact__v" }, f.value)))));
-}
-
-function dealsBlock() {
-  const done = state.deals.filter((d) => !isOpenDeal(d));
-  const max = Math.max(1, ...STAGES.map((s) => state.deals.filter((d) => d.stage === s.value).length));
-  return h("section", { class: "panel panel--grey span-4" },
-    h("div", { class: "panel__head" }, h("h2", { class: "eyebrow" }, "Deals"),
-      h("a", { class: "link small", href: "#deals" }, "Open Deal Tracker")),
-    h("div", { class: "panel__body" },
-      h("div", null,
-        h("div", { class: "bignum" }, done.length),
-        h("div", { class: "caps" }, "Signed or closed"),
-        h("div", { class: "small sub" }, done.length
-          ? ["With ", done.map((d, i) => [i > 0 && ", ", h("button", { class: "link", type: "button", onclick: () => openDeal(d.id) }, d.organisation || d.name)])]
-          : "Nothing signed yet.")),
-      h("div", { class: "stagebars" }, STAGES.map((s) => {
-        const n = state.deals.filter((d) => d.stage === s.value).length;
-        return h("div", { class: "stagebar" },
-          h("span", null, s.label),
-          h("span", { class: "stagebar__track" }, h("span", { class: "stagebar__fill c-" + s.value, style: `display:block;width:${(n / max) * 100}%` })),
-          h("span", { class: "num muted", style: "text-align:right" }, n));
-      }))));
-}
-
+// ---------- pieces shared with Teams ----------
 function goalRow(g) {
   const hasNumbers = g.target != null && g.target !== 0;
   const pct = hasNumbers ? Math.max(0, Math.min(100, ((g.current || 0) / g.target) * 100)) : 0;
@@ -80,90 +69,160 @@ function goalRow(g) {
 export function goalsList(goals, emptyText) {
   return goals.length ? h("div", null, goals.map(goalRow)) : h("div", { class: "muted small" }, emptyText);
 }
-
-function targetsBlock() {
-  const goals = state.goals.filter((g) => !g.team_id);
-  const p = panel("Company targets", addBtn("Add target", "goals", {}),
-    goals.length ? goalsList(goals) : emptyState("No targets set yet.", "Add the numbers the whole company is working toward: revenue, units, deals signed, sites trained.", null));
-  p.classList.add("span-8");
-  return p;
+function daysLeft(m) {
+  if (!parseDate(m.date) || m.status === "done") return "";
+  const d = -daysSince(m.date);
+  return d < 0 ? "" : d === 0 ? "today" : `${d}d`;
 }
-
-function todosBlock() {
-  const tasks = state.tasks.filter((t) => t.company_wide);
-  const open = tasks.filter((t) => t.status !== "done").length;
-  const p = panel(`Company to-dos · ${open} open`, addBtn("Add", "tasks", { company_wide: true, status: "todo" }),
-    taskList(tasks, { empty: "Nothing on the company list." }));
-  p.classList.add("span-4");
-  return p;
-}
-
 export function milestoneRows(list) {
   return h("ul", { class: "rows" }, list.map((m) => h("li", { class: "row" },
     h("span", { class: "row__date" }, m.date_label || fmtDate(m.date) || "No date"),
     h("button", { class: "row__main rowbtn", type: "button", onclick: () => editRecord("milestones", m) },
-      h("div", { class: "row__title" }, h("span", { class: "sq" + (m.kind === "external" ? " sq--ring" : m.status === "done" ? "" : " sq--open"), title: m.kind === "external" ? "An outside event we track" : null }), m.title)))));
+      h("div", { class: "row__title" },
+        h("span", { class: "sq" + (m.kind === "external" ? " sq--ring" : m.status === "done" ? "" : " sq--open"), title: m.kind === "external" ? "An outside event we track" : null }),
+        m.title)),
+    daysLeft(m) && h("span", { class: "days" }, daysLeft(m)))));
 }
 
-function milestonesBlock() {
+// ---------- sections ----------
+function section(title, action, ...body) {
+  return h("section", { class: "sec" }, h("div", { class: "sec__head" }, h("h2", { class: "sec__title" }, title), action), body);
+}
+const smallBtn = (label, onclick) => h("button", { class: "btn btn--small", type: "button", onclick }, label);
+
+function attentionItems() {
+  const today = todayISO();
+  const items = [];
+  for (const t of state.tasks) {
+    if (t.status === "done" || !t.due) continue;
+    const overdue = t.due < today;
+    if (!overdue && -daysSince(t.due) > 7) continue;
+    items.push({
+      rank: overdue ? 0 : 4, red: overdue, title: t.title,
+      text: overdue ? `Overdue since ${fmtDate(t.due)}` : `Due ${fmtDate(t.due)}`,
+      open: () => editRecord("tasks", t),
+      action: ["Done", () => update("tasks", t.id, { status: "done" })],
+    });
+  }
+  for (const d of state.deals) {
+    const issues = dealIssues(d);
+    if (!issues.length) continue;
+    const top = issues[0];
+    const action =
+      top.key === "stalled" || top.key === "touch" ? ["Log contact today", () => { update("deals", d.id, { last_touch: today }); toast(`Contact logged on ${d.name}.`); }]
+      : top.key === "owner" ? (state.me.id ? ["Take it", () => update("deals", d.id, { owner_id: state.me.id })] : ["Assign", () => editRecord("deals", d)])
+      : top.key === "next" ? ["Add next step", () => editRecord("deals", d)]
+      : ["Review", () => openDeal(d.id)];
+    items.push({ rank: 1 + top.rank, red: top.key === "stalled", title: d.name, text: issues.slice(0, 2).map((i) => i.text).join(" · "), open: () => openDeal(d.id), action });
+  }
+  return items.sort((a, b) => a.rank - b.rank || a.title.localeCompare(b.title));
+}
+
+function attention() {
+  const items = attentionItems();
+  if (!items.length) return section("Needs attention", null, h("div", { class: "muted" }, "Nothing right now."));
+  const shown = showAll ? items : items.slice(0, ATTENTION_LIMIT);
+  return section(`Needs attention · ${items.length}`,
+    items.length > ATTENTION_LIMIT && h("button", { class: "link small", type: "button", onclick: () => { showAll = !showAll; refresh(); } }, showAll ? "Show fewer" : "Show all"),
+    h("ul", null, shown.map((it) => h("li", { class: "arow" },
+      h("span", { class: "adot" + (it.red ? " adot--red" : "") }),
+      h("button", { class: "arow__main", type: "button", onclick: it.open },
+        h("div", { class: "arow__title" }, it.title), h("div", { class: "arow__text" }, it.text)),
+      smallBtn(it.action[0], it.action[1])))));
+}
+
+function todos() {
+  const tasks = state.tasks.filter((t) => t.company_wide || (state.me.id && t.owner_id === state.me.id));
+  const open = tasks.filter((t) => t.status !== "done").length;
+  const input = h("input", { id: "quick-todo", placeholder: "Add a to-do", autocomplete: "off", "aria-label": "Add a to-do" });
+  input.addEventListener("keydown", (e) => {
+    const title = input.value.trim();
+    if (e.key !== "Enter" || !title) return;
+    input.value = "";
+    create("tasks", { title, status: "todo", company_wide: true, owner_id: state.me.id || null });
+  });
+  return section(`To-dos · ${open}`, null,
+    tasks.length > 0 && taskList(tasks),
+    h("div", { class: "quickadd" }, h("span", { "aria-hidden": "true" }, "+"), input));
+}
+
+function targets() {
+  const goals = state.goals.filter((g) => !g.team_id);
+  if (!goals.length) return null;
+  return section("Targets", smallBtn("Add", () => editRecord("goals", null, {})), goalsList(goals));
+}
+
+function activity() {
+  const tables = { deal: ["deals", openDeal], person: ["people", openPerson], contact: ["contacts", openContact] };
+  const recent = [...state.activity]
+    .filter((a) => tables[a.entity_type] && byId(tables[a.entity_type][0], a.entity_id))
+    .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at))).slice(0, 6);
+  if (!recent.length) return null;
+  return section("Recent", null, h("ul", null, recent.map((a) => {
+    const [table, open] = tables[a.entity_type];
+    const rec = byId(table, a.entity_id);
+    return h("li", { class: "arow" },
+      h("button", { class: "arow__main", type: "button", onclick: () => open(rec.id) },
+        h("div", { class: "arow__title" }, rec.name), h("div", { class: "arow__text" }, a.body)),
+      h("span", { class: "days" }, [a.author, ago(a.created_at)].filter(Boolean).join(" · ")));
+  })));
+}
+
+function comingUp() {
   const all = state.milestones.filter((m) => !m.team_id);
   const key = (m) => (parseDate(m.date) ? m.date : "9999");
-  const upcoming = all.filter((m) => m.status !== "done").sort((a, b) => key(a).localeCompare(key(b)));
+  const ahead = all.filter((m) => m.status !== "done").sort((a, b) => key(a).localeCompare(key(b)));
   const done = all.filter((m) => m.status === "done").sort((a, b) => key(b).localeCompare(key(a)));
-  const p = panel("Milestones and roadmap", addBtn("Add milestone", "milestones", { status: "upcoming", kind: "company" }),
-    h("div", { class: "two-col" },
-      h("div", { class: "block" }, h("div", { class: "caps" }, `Ahead · ${upcoming.length}`),
-        upcoming.length ? milestoneRows(upcoming) : h("div", { class: "muted small" }, "Nothing on the roadmap yet."),
-        all.some((m) => m.kind === "external") && h("div", { class: "row__meta" }, h("span", { class: "sq sq--ring" }), "An outside event we track")),
-      h("div", { class: "block" }, h("div", { class: "caps" }, `Done · ${done.length}`),
-        done.length ? milestoneRows(done) : h("div", { class: "muted small" }, "Nothing marked done yet."))));
-  p.classList.add("span-8");
-  return p;
+  return section("Coming up", smallBtn("Add", () => editRecord("milestones", null, { status: "upcoming", kind: "company" })),
+    ahead.length ? milestoneRows(ahead) : h("div", { class: "muted small" }, "Nothing scheduled."),
+    done.length > 0 && h("details", { class: "past" }, h("summary", null, `${done.length} done`), milestoneRows(done)));
 }
 
-function valuesBlock() {
-  const values = state.settings.values || [];
-  const p = panel("Our values", h("button", { class: "btn btn--small", type: "button", onclick: editCompany }, values.length ? "Edit" : "Add"),
-    values.length
-      ? h("ul", { class: "rows" }, values.map((v) => h("li", { class: "row" }, h("span", { class: "row__title" }, h("span", { class: "sq" }), v))))
-      : emptyState("Not written yet.", "Add the handful of values the team works by.", null));
-  p.classList.add("span-4");
-  return p;
+function team() {
+  if (!state.people.length) return null;
+  return section("Team", h("a", { class: "link small", href: "#people" }, "All"),
+    h("ul", null, [...state.people].sort((a, b) => a.name.localeCompare(b.name)).map((p) => h("li", { class: "arow" },
+      avatar(p.name, "s"),
+      h("button", { class: "arow__main", type: "button", onclick: () => openPerson(p.id) },
+        h("div", { class: "arow__title" }, p.name),
+        h("div", { class: "arow__text" }, p.focus || "No update yet"))))));
 }
 
-function productsBlock() {
-  const products = state.settings.products || [];
-  const regions = state.settings.regions || [];
-  if (!products.length && !regions.length) return null;
-  const groups = ["Train", "Detect", "Intercept"];
-  const p = panel("What we sell, and where", null,
-    h("div", { class: "prod-rows" },
-      groups.map((g) => {
-        const list = products.filter((x) => x.group === g);
-        return list.length ? h("div", { class: "prod-row" }, h("div", { class: "caps" }, g),
-          h("div", { class: "prod-list" }, list.map((x) => h("div", null,
-            h("div", { class: "prod__name" }, x.name), h("div", { class: "small sub" }, x.note))))) : null;
-      }),
-      regions.length > 0 && h("div", { class: "prod-row" }, h("div", { class: "caps" }, "Regions"),
-        h("div", { class: "prod-list" }, regions.map((r) => h("div", null,
-          h("div", { class: "prod__name" }, r.name), h("div", { class: "small sub" }, r.note)))))));
-  p.classList.add("span-12");
-  return p;
+// A short checklist that disappears once the hub is filled in.
+function setup() {
+  const steps = [
+    [state.goals.some((g) => !g.team_id), "Set company targets", () => editRecord("goals", null, {})],
+    [(state.settings.values || []).length > 0, "Write the values", editCompany],
+    [state.teams.length > 0, "Set up teams", () => editRecord("teams", null)],
+    [state.people.length > 0 && state.people.every((p) => p.focus), "Add what each person is working on", () => { location.hash = "people"; }],
+    [state.people.length > 0 && state.people.every((p) => p.email), "Add everyone's email", () => { location.hash = "people"; }],
+  ];
+  const left = steps.filter((s) => !s[0]);
+  if (!left.length) return null;
+  return section(`Set up · ${steps.length - left.length} of ${steps.length}`, null,
+    h("ul", null, steps.map(([done, label, go]) => h("li", { class: "arow" + (done ? " done" : "") },
+      h("span", { class: "check", "aria-hidden": "true", "aria-checked": String(Boolean(done)) }),
+      done ? h("span", { class: "arow__main row__title" }, label)
+        : h("button", { class: "arow__main", type: "button", onclick: go }, h("div", { class: "arow__title" }, label))))));
+}
+
+function greeting() {
+  const hour = new Date().getHours();
+  const part = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
+  const first = (state.me.name || "").split(" ")[0];
+  return first ? `${part}, ${first}` : part;
 }
 
 export function render() {
-  const openDeals = state.deals.filter(isOpenDeal).length;
-  const openTodos = state.tasks.filter((t) => t.company_wide && t.status !== "done").length;
-  const next = state.milestones
-    .filter((m) => m.status !== "done" && m.date && m.date >= todayISO())
-    .sort((a, b) => a.date.localeCompare(b.date))[0];
+  const mission = state.settings.mission;
   return h("main", { class: "page" },
-    h("div", { class: "page-head" }, h("div", { class: "page-head__text" },
-      h("h1", { class: "h1" }, greeting()),
-      h("div", { class: "sub" }, [
-        plural(openDeals, "open deal"),
-        plural(openTodos, "company to-do") + " open",
-        next && `Next up: ${next.title} (${next.date_label || fmtDate(next.date)})`,
-      ].filter(Boolean).join(" · ")))),
-    h("div", { class: "grid" }, missionBlock(), dealsBlock(), targetsBlock(), todosBlock(), milestonesBlock(), valuesBlock(), productsBlock()));
+    h("div", { class: "page-head" },
+      h("div", { class: "page-head__text" },
+        h("h1", { class: "h1" }, greeting()),
+        h("button", { class: "missionline", type: "button", onclick: openAbout, title: "Mission, values and what we sell" }, mission || "Write the mission")),
+      h("span", { class: "top__date" }, todayLabel())),
+    state.deals.some(isOpenDeal) && h("a", { class: "striplink", href: "#deals", "aria-label": "Open the Deal Tracker" }, pipeline()),
+    h("div", { class: "cols" },
+      h("div", { class: "stack" }, attention(), todos(), targets(), activity()),
+      h("div", { class: "stack" }, comingUp(), team(), setup())));
 }

@@ -1,8 +1,9 @@
 // Starts the hub: decides between local preview and the live database, handles
-// sign-in, draws the top bar and tabs, and shows the section for the address.
+// sign-in, draws the sidebar, and shows the section for the address.
 
 import { config } from "./config.js";
-import { h, setRerender, paintDrawer, closeDrawer, openDialog, toast, todayLabel } from "./ui.js";
+import { h, setRerender, paintDrawer, closeDrawer, openDialog, toast } from "./ui.js";
+import { openPalette } from "./palette.js";
 import { state, init, subscribe, isOpenDeal } from "./store.js";
 import { previewBackend, supabaseClient, supabaseBackend } from "./backends.js";
 import * as home from "./views/home.js";
@@ -38,6 +39,8 @@ function shell(tab) {
       h("a", { class: "brand", href: "#home" },
         h("img", { class: "brand__logo", src: "img/logo.svg", alt: "", width: "25", height: "34" }),
         h("span", { class: "brand__name" }, h("b", null, "Earendil"), " Home")),
+      h("button", { class: "side__search", type: "button", onclick: palette, "aria-label": "Search or create" },
+        h("span", null, "Search or add"), h("kbd", null, navigator.platform.includes("Mac") ? "⌘K" : "Ctrl K")),
       h("nav", { class: "tabs-wrap", "aria-label": "Sections" }, h("div", { class: "tabs" }, TABS.map((t) =>
         h("a", { class: "tab", href: "#" + t.id, "aria-current": t === tab ? "page" : null },
           h("span", null, t.label), t.count && h("span", { class: "tab__n num" }, t.count()))))),
@@ -45,14 +48,13 @@ function shell(tab) {
         state.mode === "live"
           ? h("button", { class: "side__account", type: "button", onclick: accountDialog },
               h("span", { class: "side__who" }, state.me.name || state.me.email || "Account"), h("span", { class: "muted small" }, "Account"))
-          : h("span", { class: "tag tag--solid" }, "Preview"))),
+          : h("span", { class: "tag tag--solid", title: "Showing the local seed file. Changes aren't saved." }, "Preview · not saved"))),
     h("div", { class: "main" },
-      h("header", { class: "top" },
-        h("span", { class: "top__where" }, tab.label),
-        h("span", { class: "top__date" }, todayLabel())),
       notice && h("div", { class: "notice" }, h("b", null, notice[0]), notice[1]),
       tab.view.render()))];
 }
+
+const palette = () => ready && openPalette([["About Earendil", home.openAbout]]);
 
 function render() {
   if (!ready) return;
@@ -157,6 +159,9 @@ async function boot() {
   subscribe(() => { render(); paintDrawer(); });
   setRerender(render);
   window.addEventListener("hashchange", () => { closeDrawer(); render(); window.scrollTo(0, 0); });
+  document.addEventListener("keydown", (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); palette(); }
+  });
 
   const local = ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);
   const configured = Boolean(config.supabaseUrl && config.supabaseKey);
@@ -164,9 +169,7 @@ async function boot() {
 
   if (local && (!configured || wantsPreview)) {
     const backend = await previewBackend(config.previewSeed);
-    notice = backend.seedMissing
-      ? ["Preview", "The local seed file wasn't found, so every section is empty. Changes aren't saved."]
-      : ["Preview", "Showing the local seed file. Changes you make here aren't saved."];
+    notice = backend.seedMissing ? ["Preview", "The local seed file wasn't found, so every section is empty."] : null;
     await init(backend);
     ready = true;
     render();

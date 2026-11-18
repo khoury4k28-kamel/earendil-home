@@ -42,6 +42,31 @@ export function stalledDays(deal) {
   return d > 30 ? d : null;
 }
 
+// What is missing or going stale on an open deal, most urgent first.
+export function dealIssues(deal) {
+  if (!isOpenDeal(deal)) return [];
+  const out = [];
+  const stalled = stalledDays(deal);
+  if (stalled) out.push({ key: "stalled", rank: 0, text: `No contact in ${stalled} days` });
+  if (!deal.owner_id || !byId("people", deal.owner_id)) out.push({ key: "owner", rank: 1, text: "No owner" });
+  if (!deal.next_step) out.push({ key: "next", rank: 2, text: "No next step" });
+  if (!deal.last_touch) out.push({ key: "touch", rank: 3, text: "No contact logged" });
+  if (deal.to_confirm) out.push({ key: "confirm", rank: 4, text: "Details to confirm" });
+  return out;
+}
+
+// Moves a deal to another stage and leaves a line in its history.
+export async function setStage(id, stage) {
+  const deal = byId("deals", id);
+  if (!deal || deal.stage === stage) return;
+  const from = stageLabel(deal.stage);
+  await update("deals", id, { stage });
+  create("activity", {
+    entity_type: "deal", entity_id: id, body: `Moved from ${from} to ${stageLabel(stage)}`,
+    author: state.me.label || "Team", source: "system", created_at: new Date().toISOString(),
+  });
+}
+
 export function taskList(tasks, { showOwner = true, empty = "No tasks yet." } = {}) {
   if (!tasks.length) return h("div", { class: "muted small" }, empty);
   const order = { doing: 0, todo: 1, done: 2 };
@@ -81,7 +106,7 @@ function notesBlock(type, id) {
     notes.length
       ? h("div", null, notes.map((n) => h("div", { class: "note" },
           h("div", { class: "prose" }, n.body),
-          h("div", { class: "row__meta", title: n.author_email || null }, [n.author, fmtDateTime(n.created_at), n.source && n.source !== "manual" && "via " + n.source].filter(Boolean).join(" · ")))))
+          h("div", { class: "row__meta", title: n.author_email || null }, [n.author, fmtDateTime(n.created_at), n.source && !["manual", "system"].includes(n.source) && "via " + n.source].filter(Boolean).join(" · ")))))
       : h("div", { class: "muted small" }, "No notes yet."));
 }
 
@@ -146,7 +171,7 @@ export function openDeal(id) {
       block("Stage",
         h("div", { class: "stage-pick" }, STAGES.map((s) => h("button", {
           type: "button", "aria-pressed": String(d.stage === s.value),
-          onclick: () => d.stage !== s.value && update("deals", id, { stage: s.value }),
+          onclick: () => setStage(id, s.value),
         }, s.label)))),
       d.to_confirm && h("div", { class: "confirm" }, h("div", { class: "caps" }, "To confirm"), h("div", null, d.to_confirm)),
       block("Size",

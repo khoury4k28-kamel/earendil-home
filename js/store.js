@@ -7,7 +7,7 @@ export const TABLES = ["people", "teams", "goals", "milestones", "tasks", "deals
 
 export const state = {
   mode: null,          // "preview" | "live"
-  me: { email: null, name: null, label: "" },
+  me: { id: null, email: null, name: null, label: "" },
   settings: {},
   people: [], teams: [], goals: [], milestones: [], tasks: [], deals: [], contacts: [], activity: [],
 };
@@ -25,7 +25,7 @@ export async function init(b) {
   for (const t of TABLES) state[t] = data[t] || [];
   const email = (b.me.email || "").toLowerCase();
   const person = email && state.people.find((p) => (p.email || "").toLowerCase() === email);
-  state.me = { email: b.me.email, name: person ? person.name : null, label: person ? person.name : b.me.email || b.me.label };
+  state.me = { id: person ? person.id : null, email: b.me.email, name: person ? person.name : null, label: person ? person.name : b.me.email || b.me.label };
   b.onChange(applyRemote);
   emit();
 }

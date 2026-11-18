@@ -73,8 +73,7 @@ export function render() {
 
   return h("main", { class: "page" },
     h("div", { class: "page-head" },
-      h("div", { class: "page-head__text" }, h("h1", { class: "h1" }, "CRM"),
-        h("div", { class: "sub" }, `${plural(all.length, "contact")} in one place: clients, investors, partners, team and contractors. Tick rows to email a group.`)),
+      h("h1", { class: "h1" }, "CRM"),
       h("button", { class: "btn btn--primary", type: "button", onclick: () => editRecord("contacts", null, { kind: "person", category: filter !== "all" && filter !== "team" ? filter : "partner", status: "In contact" }) }, "Add contact")),
     h("div", { class: "filters" },
       tabs.map((t) => h("button", { class: "filter", type: "button", "aria-pressed": String(filter === t.value), onclick: () => { filter = t.value; refresh(); } },
