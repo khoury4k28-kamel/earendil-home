@@ -89,7 +89,8 @@ img { max-width: 100%; display: block; }
 .notice { margin: 16px var(--gutter) 0; padding: 10px 14px; background: var(--soft); border-radius: var(--r-m); font-size: 14px; color: var(--text-2); display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
 .notice b { font-weight: 600; color: var(--ink); }
 
-.page { padding: 36px var(--gutter) 96px; max-width: 1440px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px; }
+/* Content sits against the left edge, in line with the header, at every screen width. */
+.page { padding: 36px var(--gutter) 96px; max-width: 1440px; margin: 0; display: flex; flex-direction: column; gap: 28px; }
 .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
 .page-head__text { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .page-head__text .sub { font-size: 16px; }
