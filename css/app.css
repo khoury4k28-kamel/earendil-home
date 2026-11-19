@@ -1,15 +1,15 @@
-/* Earendil Home. A plain, quiet tool look: white ground, Inter, soft rounded
+/* Earendil Home. A plain, quiet tool look: white ground, Hanken Grotesk, soft rounded
    cards, pill filters, and colour used only to carry meaning (deal stage,
    stalled, people). */
 
 @font-face {
-  font-family: Inter; font-style: normal; font-display: swap; font-weight: 100 900;
-  src: url("../fonts/inter-latin-ext-wght-normal.woff2") format("woff2-variations");
+  font-family: "Hanken Grotesk"; font-style: normal; font-display: swap; font-weight: 100 900;
+  src: url("../fonts/hanken-grotesk-latin-ext-wght-normal.woff2") format("woff2-variations");
   unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
 }
 @font-face {
-  font-family: Inter; font-style: normal; font-display: swap; font-weight: 100 900;
-  src: url("../fonts/inter-latin-wght-normal.woff2") format("woff2-variations");
+  font-family: "Hanken Grotesk"; font-style: normal; font-display: swap; font-weight: 100 900;
+  src: url("../fonts/hanken-grotesk-latin-wght-normal.woff2") format("woff2-variations");
   unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
 }
 
@@ -33,7 +33,7 @@
   --purple: #8E4EC6;      --purple-tint: #F7F2FD;
 
   --r-s: 8px; --r-m: 12px; --r-l: 16px;
-  --font: Inter, system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+  --font: "Hanken Grotesk", system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
   --gutter: clamp(16px, 3.6vw, 48px);
   color-scheme: light;
 }
@@ -43,7 +43,7 @@ html { -webkit-text-size-adjust: 100%; }
 body {
   margin: 0; background: var(--bg); color: var(--ink);
   font-family: var(--font); font-size: 15px; font-weight: 400; line-height: 1.5;
-  -webkit-font-smoothing: antialiased; font-feature-settings: "cv11", "ss03";
+  -webkit-font-smoothing: antialiased;
 }
 h1, h2, h3, h4, p, ul, ol, dl, dd, figure { margin: 0; padding: 0; }
 ul, ol { list-style: none; }
@@ -399,8 +399,6 @@ button.arow__main:hover .arow__title { text-decoration: underline; text-underlin
 .sec .rows .row { align-items: baseline; }
 
 /* ---------- search and create ---------- */
-.side__search { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin: 0 2px; padding: 8px 10px; border: 1px solid var(--line-2); border-radius: var(--r-s); background: var(--bg); color: var(--muted); font-size: 14px; }
-.side__search:hover { border-color: var(--ink); color: var(--ink); }
 kbd { font: inherit; font-size: 12px; color: var(--faint); white-space: nowrap; }
 .scrim--palette { padding-top: 14vh; }
 .palette { width: min(600px, 100%); background: var(--bg); border-radius: 16px; box-shadow: 0 24px 70px rgba(0, 0, 0, 0.25); overflow: hidden; }
@@ -414,8 +412,6 @@ kbd { font: inherit; font-size: 12px; color: var(--faint); white-space: nowrap; 
 .page-head > .h1 { align-self: center; }
 
 @media (max-width: 860px) {
-  .side__search { order: 2; margin: 0; padding: 6px 10px; }
-  .side__search kbd { display: none; }
   .scrim--palette { padding: 0; }
   .palette { border-radius: 0; min-height: 100vh; }
 }
@@ -512,6 +508,9 @@ button.arow__main:hover .rrow__title { text-decoration: underline; text-underlin
 .map.is-dragging { cursor: grabbing; }
 .map svg { position: absolute; inset: 0; width: 100%; height: 100%; }
 .land { fill: #E9E9E9; stroke: #FFFFFF; stroke-width: 0.6; vector-effect: non-scaling-stroke; }
+.land { transition: fill 0.18s; }
+.land:hover { fill: #DEDEDE; }
+.land--has { cursor: pointer; }
 .land--1 { fill: #DADADA; } .land--2 { fill: #CBCBCB; } .land--3 { fill: #B9B9B9; } .land--sel { fill: #A2A2A2; }
 .bubble { position: absolute; transform: translate(-50%, -50%); border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 600; line-height: 1; background: var(--ink); color: #fff; box-shadow: 0 0 0 2px #fff; font-variant-numeric: tabular-nums; }
 .bubble--deal { background: #fff; color: var(--ink); box-shadow: inset 0 0 0 2px var(--ink), 0 0 0 2px #fff; }
@@ -536,4 +535,46 @@ button.arow__main:hover .rrow__title { text-decoration: underline; text-underlin
   .map { height: 58vh; }
   .maplist { border-left: 0; overflow: visible; padding: 20px var(--gutter) 60px; }
   .page--map > .crumbs { padding: 14px var(--gutter); }
+}
+
+/* ---------- the map, in motion ---------- */
+.land--1:hover { fill: #CECECE; } .land--2:hover { fill: #BFBFBF; } .land--3:hover { fill: #ADADAD; } .land--sel:hover { fill: #A2A2A2; }
+.map.is-dragging .land { transition: none; }
+.bubble { transition: box-shadow 0.15s, background-color 0.15s, transform 0.15s; will-change: left, top; }
+.bubble.is-hot { z-index: 3; transform: translate(-50%, -50%) scale(1.25); box-shadow: 0 0 0 3px #fff, 0 0 0 5px var(--ink); }
+.bubble--deal.is-hot { box-shadow: inset 0 0 0 2px var(--ink), 0 0 0 3px #fff, 0 0 0 5px var(--ink); }
+.map__label { white-space: nowrap; transition: color 0.15s; }
+.maptip { position: absolute; z-index: 5; max-width: 240px; padding: 9px 12px; border-radius: 10px; background: var(--ink); color: #fff; font-size: 13px; line-height: 1.45; pointer-events: none; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.22); }
+.maptip b { display: block; font-weight: 600; }
+.maptip div { color: rgba(255, 255, 255, 0.72); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (prefers-reduced-motion: no-preference) {
+  .map--fresh .bubble { animation: pop 0.38s cubic-bezier(0.2, 1.3, 0.4, 1) backwards; }
+  @keyframes pop { from { opacity: 0; transform: translate(-50%, -50%) scale(0.3); } to { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
+  .bubble[aria-pressed="true"]::after { content: ""; position: absolute; inset: -5px; border-radius: 50%; border: 2px solid var(--ink); animation: ring 1.6s ease-out infinite; pointer-events: none; }
+  @keyframes ring { from { opacity: 0.55; transform: scale(1); } to { opacity: 0; transform: scale(1.7); } }
+}
+
+/* ---------- home, rebuilt around what people open it for ---------- */
+.pulse { font-size: 16px; color: var(--text-2); }
+.pulse a, .pulse button { text-decoration: underline; text-underline-offset: 4px; text-decoration-color: var(--line-2); }
+.pulse a:hover, .pulse button:hover { text-decoration-color: currentColor; color: var(--ink); }
+.pulse .red, .pulse .red:hover { color: var(--red); }
+.rrow { align-items: center; }
+.rrow > .rrow__n { align-self: flex-start; padding-top: 3px; }
+.rrow .btn { flex: none; padding: 7px 14px; }
+.seg--small { padding: 2px; border-radius: 9px; }
+.seg--small button { padding: 4px 10px; font-size: 13px; }
+.tidy { border-top: 1px solid var(--line); }
+.tidy:first-child { border-top: 0; }
+.tidy > .arow { border-top: 0; }
+.tidy__title { font-weight: 500; }
+button.tidy__title:hover { text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--line-2); }
+.tidy__body { margin: 0 0 14px; padding: 4px 16px; background: var(--soft); border-radius: var(--r-m); }
+.tidy__body .arow { border-color: var(--line-2); }
+.tidy__body .inline:hover, .tidy__body .pick:hover { background-color: var(--soft-2); }
+.page--home > .missionline { font-size: 14px; color: var(--muted); }
+@media (max-width: 640px) {
+  .rrow { flex-wrap: wrap; }
+  .rrow .arow__main { flex: 1 1 calc(100% - 46px); }
+  .rrow > .btn { margin-left: 38px; }
 }

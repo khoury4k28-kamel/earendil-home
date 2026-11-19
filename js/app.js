@@ -41,8 +41,6 @@ function shell(tab, sub) {
       h("a", { class: "brand", href: "#home" },
         h("img", { class: "brand__logo", src: "img/logo.svg", alt: "", width: "25", height: "34" }),
         h("span", { class: "brand__name" }, h("b", null, "Earendil"), " Home")),
-      h("button", { class: "side__search", type: "button", onclick: palette, "aria-label": "Search or create" },
-        h("span", null, "Search or add"), h("kbd", null, navigator.platform.includes("Mac") ? "⌘K" : "Ctrl K")),
       h("nav", { class: "tabs-wrap", "aria-label": "Sections" }, h("div", { class: "tabs" }, TABS.map((t) =>
         h("a", { class: "tab", href: "#" + t.id, "aria-current": t === tab ? "page" : null },
           h("span", null, t.label), t.count && h("span", { class: "tab__n num" }, t.count()))))),

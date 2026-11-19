@@ -1,25 +1,31 @@
-// Home: one column, in the order you act on it. The next three dated events
-// (the radar), then one task list where every row has a tick, one action and
-// a snooze. Below: recent changes, targets, the pipeline in brief, the team
-// and a setup checklist. Company reference (mission, values, products) is one
-// click away.
+// Home answers, in order, what people open a home page to find out:
+//   1. What matters today?          -> Today: the three things that most need a person
+//   2. What should I do next?       -> Tasks: to-dos and deal follow-ups, mine first
+//   3. What changed while I was out -> Since your last visit
+//   4. What is coming?              -> Coming up
+//   5. Who is on what, and where?   -> Team
+// Missing details (no owner, no country, nothing set up) are not tasks. They
+// sit at the foot under "Tidy up" and are fixed in place.
 
 import {
-  h, avatar, fmtDate, fmtRange, parseDate, todayISO, daysSince, ago, plural, refresh, toast, quickAdd,
+  h, avatar, fmtDate, parseDate, todayISO, todayLabel, daysSince, ago, plural, refresh, toast, quickAdd, inlineEdit,
   openDrawer, drawerFrame, block, kv,
 } from "../ui.js";
-import { state, saveSetting, isOpenDeal, create, byId, personName } from "../store.js";
+import { state, saveSetting, isOpenDeal, create, update, byId, personName } from "../store.js";
 import { openForm } from "../form.js";
 import {
-  editRecord, openDeal, openPerson, openContact, dealIssues, stalledDays,
-  logContact, takeDeal, finishTask, clearToConfirm,
+  editRecord, openDeal, openPerson, openContact, dealIssues, stalledDays, pickPerson,
+  logContact, finishTask, clearToConfirm,
 } from "../detail.js";
-import { STAGES, stageLabel } from "../schema.js";
+import { stageLabel } from "../schema.js";
+import { findCountry, personPlace } from "../places.js";
 
 let showAll = false;
-let radarAll = false;
+let moreDates = false;
+let scope = null;        // "mine" | "all"; null = decide from who is signed in
+let openTidy = null;     // which "Tidy up" row is open
+let tidyAll = false;
 const TASK_LIMIT = 5;
-const RADAR_LIMIT = 3;
 const SNOOZE_DAYS = 7;
 
 // ---------- company reference, in a side panel ----------
@@ -92,7 +98,7 @@ export function milestoneRows(list) {
     daysLeft(m) && h("span", { class: "days" }, daysLeft(m)))));
 }
 
-// ---------- sections ----------
+// ---------- small pieces ----------
 function section(title, action, ...body) {
   return h("section", { class: "sec" }, h("div", { class: "sec__head" }, h("h2", { class: "sec__title" }, title), action), body);
 }
@@ -101,6 +107,8 @@ const moreBtn = (hidden, open, toggle) => (hidden > 0 || open) &&
   h("button", { class: "more", type: "button", onclick: toggle }, open ? "Show fewer" : `+ ${hidden} more`);
 // "a · b · c", where a part may be text or an element.
 const dots = (parts) => parts.filter(Boolean).flatMap((x, i) => (i ? [" · ", x] : [x]));
+const red = (text) => h("span", { class: "red" }, text);
+const inDays = (d) => (d === 0 ? "today" : d === 1 ? "tomorrow" : `in ${d} days`);
 
 // Opens a deal with the field that needs filling already under the cursor.
 function openAt(id, field) {
@@ -109,31 +117,6 @@ function openAt(id, field) {
   if (el?.classList.contains("inline")) el.click(); else el?.focus();
 }
 
-// ---------- radar: the next dated events ----------
-function radar() {
-  const all = state.milestones.filter((m) => !m.team_id);
-  const key = (m) => (parseDate(m.date) ? m.date : "9999");
-  const ahead = all.filter((m) => m.status !== "done").sort((a, b) => key(a).localeCompare(key(b)));
-  const done = all.filter((m) => m.status === "done").sort((a, b) => key(b).localeCompare(key(a)));
-  const shown = radarAll ? ahead : ahead.slice(0, RADAR_LIMIT);
-  const when = (m) => {
-    const d = parseDate(m.date) ? -daysSince(m.date) : null;
-    return d == null || d < 0 ? "" : d === 0 ? "today" : d === 1 ? "tomorrow" : `in ${d} days`;
-  };
-  return section(ahead.length > RADAR_LIMIT && !radarAll ? `Radar · Next ${RADAR_LIMIT}` : "Radar",
-    smallBtn("Add", () => editRecord("milestones", null, { status: "upcoming", kind: "company" })),
-    ahead.length
-      ? h("ol", null, shown.map((m, i) => h("li", { class: "rrow" },
-          h("span", { class: "rrow__n num", "aria-hidden": "true" }, String(i + 1).padStart(2, "0")),
-          h("button", { class: "arow__main", type: "button", onclick: () => editRecord("milestones", m) },
-            h("div", { class: "rrow__title" }, m.title),
-            h("div", { class: "arow__text" }, dots([m.date_label || fmtDate(m.date) || "No date", when(m)]))))))
-      : h("div", { class: "muted rrow" }, "Nothing scheduled."),
-    moreBtn(ahead.length - shown.length, radarAll, () => { radarAll = !radarAll; refresh(); }),
-    radarAll && done.length > 0 && h("details", { class: "past" }, h("summary", null, `${done.length} done`), milestoneRows(done)));
-}
-
-// ---------- tasks: to-dos and deal follow-ups in one list ----------
 // Snoozing hides a row for a week, for this person on this device only.
 function snoozed() {
   try {
@@ -152,131 +135,231 @@ function snooze(key) {
   toast(`Hidden for ${SNOOZE_DAYS} days on this device.`, ["Undo", () => setSnoozed(before)]);
 }
 
-const DEAL_TASK = {
-  stalled: (d) => ({ title: `Follow up on ${d.name}`, action: ["Log contact", () => logContact("deals", d)] }),
-  owner: (d) => ({ title: `Assign an owner to ${d.name}`,
-    action: state.me.id ? ["Take it", () => takeDeal(d)] : ["Assign", () => openAt(d.id, "owner")] }),
-  next: (d) => ({ title: `Set the next step for ${d.name}`, action: ["Add next step", () => openAt(d.id, "next")] }),
-  touch: (d) => ({ title: `Log the last contact on ${d.name}`, action: ["Add date", () => openAt(d.id, "touch")] }),
-  confirm: (d) => ({ title: `Confirm the details of ${d.name}`, action: ["Review", () => openDeal(d.id)], tick: () => clearToConfirm(d) }),
-};
-
-function taskItems() {
+// ---------- everything that could need a person, each with a score ----------
+// Higher scores are more pressing. "Today" takes the top three.
+function workItems() {
   const today = todayISO();
+  const me = state.me.id;
   const items = [];
   for (const t of state.tasks) {
     if (t.status === "done") continue;
     const overdue = Boolean(t.due && t.due < today);
-    const soon = Boolean(t.due && !overdue && -daysSince(t.due) <= 7);
-    if (!(t.company_wide || (state.me.id && t.owner_id === state.me.id) || overdue || soon)) continue;
+    const left = t.due && !overdue ? -daysSince(t.due) : null;
+    const soon = left != null && left <= 7;
+    const mine = Boolean(me && t.owner_id === me);
+    if (!(t.company_wide || mine || overdue || soon)) continue;
     const edit = () => editRecord("tasks", t);
     items.push({
-      key: "task:" + t.id, rank: overdue ? 0 : 2, sort: t.due || "9", title: t.title, open: edit, tick: () => finishTask(t),
-      action: !personName(t.owner_id) && ["Assign", edit],
-      meta: [personName(t.owner_id), overdue ? h("span", { class: "red" }, `Overdue since ${fmtDate(t.due)}`) : t.due && `Due ${fmtDate(t.due)}`,
+      key: "task:" + t.id, type: "task", mine, title: t.title, open: edit, tick: () => finishTask(t),
+      score: overdue ? 100 + Math.min(30, daysSince(t.due)) : soon ? 70 - left : mine ? 60 : 50,
+      action: personName(t.owner_id) ? ["Done", () => finishTask(t)] : ["Assign", edit],
+      meta: [personName(t.owner_id), overdue ? red(`Overdue since ${fmtDate(t.due)}`) : t.due && `Due ${fmtDate(t.due)}`,
         t.status === "doing" && "In progress", byId("deals", t.deal_id)?.name],
     });
   }
   for (const d of state.deals) {
-    const issues = dealIssues(d);
-    if (!issues.length) continue;
-    const top = issues[0];
-    const task = DEAL_TASK[top.key](d);
-    items.push({
-      key: `deal:${d.id}:${top.key}`, rank: top.key === "stalled" ? 1 : 3 + top.rank, sort: d.name, title: task.title,
-      open: () => openDeal(d.id), tick: task.tick || task.action[1], action: task.action,
-      meta: [d.organisation !== d.name && d.organisation, stageLabel(d.stage),
-        top.key === "stalled" && h("span", { class: "red" }, top.text), ...issues.slice(1, 2).map((i) => i.text)],
-    });
+    if (!isOpenDeal(d)) continue;
+    const quiet = stalledDays(d);
+    if (!quiet && d.next_step) continue;
+    const base = { type: "deal", mine: Boolean(me && d.owner_id === me), open: () => openDeal(d.id) };
+    const about = [d.organisation !== d.name && d.organisation, stageLabel(d.stage), personName(d.owner_id)];
+    if (quiet) {
+      items.push({ ...base, key: `deal:${d.id}:stalled`, score: 90 + Math.min(9, quiet / 10), title: `Follow up on ${d.name}`,
+        tick: () => logContact("deals", d), action: ["Log contact", () => logContact("deals", d)], meta: [red(`No contact in ${quiet} days`), ...about] });
+    } else {
+      items.push({ ...base, key: `deal:${d.id}:next`, score: 45, title: `Set the next step for ${d.name}`,
+        tick: () => openAt(d.id, "next"), action: ["Add next step", () => openAt(d.id, "next")], meta: about });
+    }
   }
-  return items.sort((a, b) => a.rank - b.rank || a.sort.localeCompare(b.sort));
+  for (const m of state.milestones) {
+    if (m.team_id || m.status === "done" || !parseDate(m.date)) continue;
+    const left = -daysSince(m.date);
+    if (left < 0 || left > 60) continue;
+    items.push({ key: "date:" + m.id, type: "date", id: m.id, title: m.title, open: () => editRecord("milestones", m),
+      score: left <= 1 ? 98 : left <= 14 ? 85 - left : 40 - left / 10,
+      meta: [m.date_label || fmtDate(m.date), left <= 14 ? red(inDays(left)) : inDays(left)] });
+  }
+  const hidden = snoozed();
+  return items.filter((it) => !hidden[it.key]).sort((a, b) => b.score - a.score || a.title.localeCompare(b.title));
+}
+// The three most pressing, with no more than two of one kind.
+function topThree(items) {
+  const picked = [];
+  for (const it of items) {
+    if (picked.length === 3) break;
+    if (picked.filter((p) => p.type === it.type).length < 2) picked.push(it);
+  }
+  return picked;
 }
 
-function tasks() {
-  const hidden = snoozed();
-  const all = taskItems();
-  const items = all.filter((it) => !hidden[it.key]);
+// ---------- 1. today ----------
+function today(top) {
+  if (!top.length) return null;
+  return section(top.length === 3 ? "Today · Top 3" : "Today", null,
+    h("ol", null, top.map((it, i) => h("li", { class: "rrow" },
+      h("span", { class: "rrow__n num", "aria-hidden": "true" }, String(i + 1).padStart(2, "0")),
+      h("button", { class: "arow__main", type: "button", onclick: it.open },
+        h("div", { class: "rrow__title" }, it.title), h("div", { class: "arow__text" }, dots(it.meta))),
+      it.action && h("button", { class: "btn", type: "button", onclick: it.action[1] }, it.action[0])))));
+}
+
+// ---------- 2. tasks ----------
+function tasks(rest, snoozedCount) {
+  const me = state.me.id;
+  const mineCount = rest.filter((it) => it.mine).length;
+  const which = scope || (me && mineCount ? "mine" : "all");
+  const items = which === "mine" ? rest.filter((it) => it.mine) : rest;
   const shown = showAll ? items : items.slice(0, TASK_LIMIT);
-  const asleep = all.length - items.length;
+  const toggle = me && h("div", { class: "seg seg--small", role: "group", "aria-label": "Whose tasks" },
+    h("button", { type: "button", "aria-pressed": String(which === "mine"), onclick: () => { scope = "mine"; refresh(); } }, `Mine ${mineCount}`),
+    h("button", { type: "button", "aria-pressed": String(which === "all"), onclick: () => { scope = "all"; refresh(); } }, `Everyone ${rest.length}`));
   return section(`Tasks · ${items.length}`,
-    asleep > 0 && h("button", { class: "more more--head", type: "button", onclick: () => setSnoozed({}) }, `${asleep} snoozed · Show`),
+    h("div", { class: "actions" },
+      snoozedCount > 0 && h("button", { class: "more more--head", type: "button", onclick: () => setSnoozed({}) }, `${snoozedCount} snoozed · Show`),
+      toggle),
     h("ul", null, shown.map((it) => h("li", { class: "arow trow" },
       h("button", { class: "check", type: "button", role: "checkbox", "aria-checked": "false", "aria-label": "Done: " + it.title, onclick: it.tick }),
       h("button", { class: "arow__main", type: "button", onclick: it.open },
         h("div", { class: "arow__title" }, it.title), h("div", { class: "arow__text" }, dots(it.meta))),
-      it.action && h("button", { class: "btn", type: "button", onclick: it.action[1] }, it.action[0]),
+      it.action && it.action[0] !== "Done" && h("button", { class: "btn", type: "button", onclick: it.action[1] }, it.action[0]),
       h("button", { class: "quiet", type: "button", "aria-label": "Snooze: " + it.title, onclick: () => snooze(it.key) }, "Snooze")))),
     moreBtn(items.length - shown.length, showAll, () => { showAll = !showAll; refresh(); }),
     quickAdd("quick-todo", "Add a to-do", (title) => create("tasks", { title, status: "todo", company_wide: true, owner_id: state.me.id || null })));
 }
 
-function targets() {
-  const goals = state.goals.filter((g) => !g.team_id);
-  if (!goals.length) return null;
-  return section("Targets", smallBtn("Add", () => editRecord("goals", null, {})), goalsList(goals));
+// ---------- 3. since your last visit ----------
+// When this person last opened the hub on this device, read once per session.
+let since = null;
+function lastVisit() {
+  if (since !== null) return since;
+  try {
+    since = localStorage.getItem("home-last-visit") || "";
+    localStorage.setItem("home-last-visit", new Date().toISOString());
+  } catch { since = ""; }
+  return since;
+}
+function changes() {
+  const from = lastVisit();
+  if (!from) return null;
+  const myEmail = (state.me.email || "").toLowerCase();
+  const who = (email) => state.people.find((p) => (p.email || "").toLowerCase() === String(email || "").toLowerCase())?.name || String(email || "").split("@")[0];
+  const kinds = { deal: ["deals", openDeal], person: ["people", openPerson], contact: ["contacts", openContact] };
+  const rows = [];
+  const seen = new Set();
+  for (const a of state.activity) {
+    const kind = kinds[a.entity_type];
+    const rec = kind && byId(kind[0], a.entity_id);
+    if (!rec || String(a.created_at) <= from) continue;
+    if ((a.author_email || "").toLowerCase() === myEmail && myEmail) continue;
+    if (!a.author_email && a.author === state.me.label) continue;
+    seen.add(a.entity_type + ":" + a.entity_id);
+    rows.push({ at: a.created_at, title: rec.name, text: a.body, by: a.author, open: () => kind[1](rec.id) });
+  }
+  const tables = [["deals", "deal", (r) => openDeal(r.id), "Deal"], ["contacts", "contact", (r) => openContact(r.id), "Contact"],
+    ["tasks", "task", (r) => editRecord("tasks", r), "Task"], ["milestones", "date", (r) => editRecord("milestones", r), "Date"]];
+  for (const [table, type, open, noun] of tables) for (const r of state[table]) {
+    if (!r.updated_at || String(r.updated_at) <= from || seen.has(type + ":" + r.id)) continue;
+    if (myEmail && (r.updated_by || "").toLowerCase() === myEmail) continue;
+    const added = r.created_at && Math.abs(new Date(r.updated_at) - new Date(r.created_at)) < 5000;
+    rows.push({ at: r.updated_at, title: r.name || r.title, text: `${noun} ${added ? "added" : "updated"}`, by: who(r.updated_by), open: () => open(r) });
+  }
+  if (!rows.length) return null;
+  rows.sort((a, b) => String(b.at).localeCompare(String(a.at)));
+  return section(`Since your last visit · ${rows.length}`, h("span", { class: "days" }, ago(from)),
+    h("ul", null, rows.slice(0, 8).map((r) => h("li", { class: "arow" },
+      h("button", { class: "arow__main", type: "button", onclick: r.open },
+        h("div", { class: "arow__title" }, r.title), h("div", { class: "arow__text" }, r.text)),
+      h("span", { class: "days" }, [r.by, ago(r.at)].filter(Boolean).join(" · "))))));
 }
 
-function activity() {
-  const tables = { deal: ["deals", openDeal], person: ["people", openPerson], contact: ["contacts", openContact] };
-  const recent = [...state.activity]
-    .filter((a) => tables[a.entity_type] && byId(tables[a.entity_type][0], a.entity_id))
-    .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at))).slice(0, 6);
-  if (!recent.length) return null;
-  return section("Recent", null, h("ul", null, recent.map((a) => {
-    const [table, open] = tables[a.entity_type];
-    const rec = byId(table, a.entity_id);
-    return h("li", { class: "arow" },
-      h("button", { class: "arow__main", type: "button", onclick: () => open(rec.id) },
-        h("div", { class: "arow__title" }, rec.name), h("div", { class: "arow__text" }, a.body)),
-      h("span", { class: "days" }, [a.author, ago(a.created_at)].filter(Boolean).join(" · ")));
-  })));
+// ---------- 4. coming up ----------
+function comingUp(skip) {
+  const all = state.milestones.filter((m) => !m.team_id);
+  const key = (m) => (parseDate(m.date) ? m.date : "9999");
+  const ahead = all.filter((m) => m.status !== "done" && !skip.has(m.id)).sort((a, b) => key(a).localeCompare(key(b)));
+  const done = all.filter((m) => m.status === "done").sort((a, b) => key(b).localeCompare(key(a)));
+  const shown = moreDates ? ahead : ahead.slice(0, 4);
+  return section("Coming up", smallBtn("Add", () => editRecord("milestones", null, { status: "upcoming", kind: "company" })),
+    shown.length > 0 && milestoneRows(shown),
+    moreBtn(ahead.length - shown.length, moreDates, () => { moreDates = !moreDates; refresh(); }),
+    moreDates && done.length > 0 && h("details", { class: "past" }, h("summary", null, `${done.length} done`), milestoneRows(done)));
 }
 
-// The pipeline in three lines: deals by stage, what's stalled, and the estimate
-// with how many deals it rests on. The full view is the Deal Tracker.
-function pipeline() {
-  if (!state.deals.length) return null;
-  const open = state.deals.filter(isOpenDeal);
-  const sized = open.filter((d) => d.size_low != null || d.size_high != null);
-  const lo = sized.reduce((t, d) => t + (d.size_low ?? d.size_high), 0);
-  const hi = sized.reduce((t, d) => t + (d.size_high ?? d.size_low), 0);
-  const stalled = open.filter((d) => stalledDays(d) != null).length;
-  return section("Pipeline", h("a", { class: "link small", href: "#deals" }, "Open"),
-    h("ul", null, STAGES.map((s) => {
-      const n = state.deals.filter((d) => (d.stage || "lead") === s.value).length;
-      return n > 0 && h("li", { class: "arow arow--tight" }, h("span", { class: "dot c-" + s.value }), h("span", { class: "arow__main" }, s.label), h("span", { class: "num" }, n));
-    })),
-    (stalled > 0 || sized.length > 0) && h("div", { class: "small muted pipe__foot" },
-      stalled > 0 && h("span", { class: "stalled" }, `${stalled} stalled`),
-      sized.length > 0 && h("span", null, `${fmtRange(lo, hi)} estimated, on ${sized.length} of ${plural(open.length, "open deal")}`)));
-}
-
+// ---------- 5. team ----------
 function team() {
   if (!state.people.length) return null;
   return section("Team", h("a", { class: "link small", href: "#people" }, "All"),
-    h("ul", null, [...state.people].sort((a, b) => a.name.localeCompare(b.name)).map((p) => h("li", { class: "arow" },
-      avatar(p.name, "s"),
-      h("button", { class: "arow__main", type: "button", onclick: () => openPerson(p.id) },
-        h("div", { class: "arow__title" }, p.name),
-        h("div", { class: "arow__text" }, p.focus || "No update yet"))))));
+    h("ul", null, [...state.people].sort((a, b) => a.name.localeCompare(b.name)).map((p) => {
+      const place = personPlace(p);
+      return h("li", { class: "arow" },
+        avatar(p.name, "s"),
+        h("button", { class: "arow__main", type: "button", onclick: () => openPerson(p.id) },
+          h("div", { class: "arow__title" }, p.name),
+          h("div", { class: "arow__text" }, p.focus || "No update yet")),
+        place.text && h("span", { class: "days" }, place.text));
+    })));
 }
 
-// A short checklist that disappears once the hub is filled in.
-function setup() {
-  const steps = [
-    [state.goals.some((g) => !g.team_id), "Set company targets", () => editRecord("goals", null, {})],
-    [(state.settings.values || []).length > 0, "Write the values", editCompany],
-    [state.teams.length > 0, "Set up teams", () => editRecord("teams", null)],
-    [state.people.length > 0 && state.people.every((p) => p.focus), "Add what each person is working on", () => { location.hash = "people"; }],
-    [state.people.length > 0 && state.people.every((p) => p.email), "Add everyone's email", () => { location.hash = "people"; }],
-  ];
-  const left = steps.filter((s) => !s[0]);
-  if (!left.length) return null;
-  return section(`Set up · ${steps.length - left.length} of ${steps.length}`, null,
-    h("ul", null, steps.map(([done, label, go]) => h("li", { class: "arow" + (done ? " done" : "") },
-      h("span", { class: "check", "aria-hidden": "true", "aria-checked": String(Boolean(done)) }),
-      done ? h("span", { class: "arow__main row__title" }, label)
-        : h("button", { class: "arow__main", type: "button", onclick: go }, h("div", { class: "arow__title" }, label))))));
+// ---------- tidy up: missing details, fixed in place ----------
+function tidy() {
+  const open = state.deals.filter(isOpenDeal);
+  const line = (rec, onName, control) => h("li", { class: "arow" },
+    h("button", { class: "arow__main", type: "button", onclick: onName }, h("div", { class: "arow__title" }, rec.name)), control);
+  const noOwner = open.filter((d) => !personName(d.owner_id));
+  const noTouch = open.filter((d) => !d.last_touch);
+  const toConfirm = open.filter((d) => d.to_confirm);
+  const noCountry = state.contacts.filter((c) => !findCountry(c.country));
+  const noFocus = state.people.filter((p) => !p.focus);
+  const noEmail = state.people.filter((p) => !p.email);
+  const rows = [
+    noOwner.length && { key: "owner", title: `${plural(noOwner.length, "deal has", "deals have")} no owner`,
+      body: () => noOwner.map((d) => line(d, () => openDeal(d.id), pickPerson({ value: d.owner_id, blank: "Choose owner", label: `Owner of ${d.name}`, onChange: (v) => update("deals", d.id, { owner_id: v }) }))) },
+    noTouch.length && { key: "touch", title: `${plural(noTouch.length, "deal has", "deals have")} no contact date`,
+      body: () => noTouch.map((d) => line(d, () => openDeal(d.id), inlineEdit({ id: `tidy-touch-${d.id}`, value: "", placeholder: "Add date", label: `Last contact on ${d.name}`, type: "date", onSave: (v) => update("deals", d.id, { last_touch: v }) }))) },
+    toConfirm.length && { key: "confirm", title: `${plural(toConfirm.length, "deal has", "deals have")} details to confirm`,
+      body: () => toConfirm.map((d) => h("li", { class: "arow" },
+        h("button", { class: "arow__main", type: "button", onclick: () => openDeal(d.id) }, h("div", { class: "arow__title" }, d.name), h("div", { class: "arow__text" }, d.to_confirm)),
+        smallBtn("Confirmed", () => clearToConfirm(d)))) },
+    noCountry.length && { key: "country", title: `${plural(noCountry.length, "contact has", "contacts have")} no country, so ${noCountry.length === 1 ? "it is" : "they are"} not on the map`,
+      body: () => noCountry.map((c) => line(c, () => openContact(c.id), inlineEdit({ id: `tidy-country-${c.id}`, value: c.country, placeholder: "Add country", label: `Country of ${c.name}`, onSave: (v) => update("contacts", c.id, { country: v }) }))) },
+    noFocus.length && { key: "focus", title: `${plural(noFocus.length, "person has", "people have")} no update on what they're working on`,
+      body: () => noFocus.map((p) => line(p, () => openPerson(p.id), inlineEdit({ id: `tidy-focus-${p.id}`, value: "", placeholder: "Add update", label: `What ${p.name} is working on`, onSave: (v) => update("people", p.id, { focus: v }) }))) },
+    noEmail.length && { key: "email", title: `${plural(noEmail.length, "person has", "people have")} no email, so the hub can't greet them by name`,
+      body: () => noEmail.map((p) => line(p, () => openPerson(p.id), inlineEdit({ id: `tidy-email-${p.id}`, value: "", placeholder: "Add email", label: `Email of ${p.name}`, type: "email", onSave: (v) => update("people", p.id, { email: v }) }))) },
+    !state.goals.some((g) => !g.team_id) && { key: "targets", title: "No company targets yet", go: ["Set targets", () => editRecord("goals", null, {})] },
+    !(state.settings.values || []).length && { key: "values", title: "The values aren't written yet", go: ["Write them", editCompany] },
+    !state.teams.length && { key: "teams", title: "No teams yet", go: ["Set up teams", () => { location.hash = "teams"; }] },
+  ].filter(Boolean);
+  if (!rows.length) return null;
+  const shown = tidyAll ? rows : rows.slice(0, 4);
+  return section(`Tidy up · ${rows.length}`, null,
+    h("ul", null, shown.map((r) => {
+      const isOpen = openTidy === r.key;
+      return h("li", { class: "tidy" },
+        h("div", { class: "arow" },
+          r.body
+            ? h("button", { class: "arow__main tidy__title", type: "button", "aria-expanded": String(isOpen), onclick: () => { openTidy = isOpen ? null : r.key; refresh(); } }, r.title)
+            : h("span", { class: "arow__main tidy__title" }, r.title),
+          r.body ? h("button", { class: "quiet", type: "button", "aria-hidden": "true", tabindex: "-1", onclick: () => { openTidy = isOpen ? null : r.key; refresh(); } }, isOpen ? "Close" : "Fix")
+            : smallBtn(r.go[0], r.go[1])),
+        isOpen && h("ul", { class: "tidy__body" }, r.body()));
+    })),
+    moreBtn(rows.length - shown.length, tidyAll, () => { tidyAll = !tidyAll; refresh(); }));
+}
+
+// ---------- the line under the greeting: the state of things, in a sentence ----------
+function pulse() {
+  const open = state.deals.filter(isOpenDeal);
+  const quiet = open.filter((d) => stalledDays(d) != null).length;
+  const next = state.milestones.filter((m) => !m.team_id && m.status !== "done" && parseDate(m.date) && -daysSince(m.date) >= 0)
+    .sort((a, b) => a.date.localeCompare(b.date))[0];
+  const left = next ? -daysSince(next.date) : null;
+  return h("div", { class: "pulse" }, dots([
+    todayLabel(),
+    open.length > 0 && h("a", { href: "#deals" }, plural(open.length, "open deal")),
+    quiet > 0 && h("a", { href: "#deals", class: "red" }, `${quiet} gone quiet`),
+    next && h("button", { type: "button", onclick: () => editRecord("milestones", next) }, left === 0 ? `${next.title} is today` : `${plural(left, "day")} to ${next.title}`),
+  ]));
 }
 
 function greeting() {
@@ -287,10 +370,21 @@ function greeting() {
 }
 
 export function render() {
+  const all = workItems();
+  const top = topThree(all);
+  const picked = new Set(top.map((it) => it.key));
+  const rest = all.filter((it) => !picked.has(it.key) && it.type !== "date");
+  const hiddenCount = Object.keys(snoozed()).length;
   const mission = state.settings.mission;
   return h("main", { class: "page page--home" },
-    h("div", { class: "page-head__text" },
-      h("h1", { class: "h1" }, greeting()),
-      h("button", { class: "missionline", type: "button", onclick: openAbout, title: "Mission, values and what we sell" }, mission || "Write the mission")),
-    radar(), tasks(), activity(), targets(), pipeline(), team(), setup());
+    h("div", { class: "page-head__text" }, h("h1", { class: "h1" }, greeting()), pulse()),
+    today(top), tasks(rest, hiddenCount), changes(), goals(),
+    comingUp(new Set(top.filter((it) => it.type === "date").map((it) => it.id))), team(), tidy(),
+    h("button", { class: "missionline", type: "button", onclick: openAbout, title: "Mission, values and what we sell" }, (mission || "Write the mission") + " →"));
+}
+
+function goals() {
+  const list = state.goals.filter((g) => !g.team_id);
+  if (!list.length) return null;
+  return section("Targets", smallBtn("Add", () => editRecord("goals", null, {})), goalsList(list));
 }
