@@ -373,9 +373,6 @@ td input[type="checkbox"], th input[type="checkbox"] { width: 16px; height: 16px
 /* ---------- home: sections without boxes, rows with one action each ---------- */
 .missionline { text-align: left; font-size: 16px; color: var(--text-2); }
 .missionline:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--line-2); }
-.striplink { display: block; text-decoration: none; padding: 18px 20px; border: 1px solid var(--line); border-radius: var(--r-l); }
-.striplink:hover { border-color: var(--ink); }
-.striplink .stagebar-all { max-width: none; }
 .cols { display: grid; grid-template-columns: minmax(0, 1.85fr) minmax(280px, 1fr); gap: 36px 52px; align-items: start; }
 .stack { display: flex; flex-direction: column; gap: 36px; min-width: 0; }
 .sec { display: flex; flex-direction: column; min-width: 0; }
@@ -453,3 +450,6 @@ td .input { padding: 5px 9px; margin: -4px 0; }
 div.stalled { display: flex; margin-top: 3px; }
 td .pick { max-width: none; }
 .drawer__head .actions { flex-wrap: nowrap; flex: none; }
+.arow--tight { padding: 7px 0; border-top: 0; }
+.arow--tight .dot { margin-right: 0; }
+.pipe__foot { display: flex; flex-wrap: wrap; gap: 4px 14px; padding-top: 9px; margin-top: 4px; border-top: 1px solid var(--line); }

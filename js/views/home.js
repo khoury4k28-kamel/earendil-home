@@ -1,15 +1,15 @@
-// Home: what needs doing today. A pipeline strip, the things that need
-// attention with one-click actions, to-dos, what's coming up and what each
-// person is on. Company reference (mission, values, products) is one click away.
+// Home: what needs doing today. It opens on the things that need attention,
+// each with a one-click action, then to-dos. Beside them: the pipeline in
+// brief, what's coming up and what each person is on. Company reference (mission, values, products) is one click away.
 
 import {
-  h, avatar, fmtDate, parseDate, todayISO, todayLabel, daysSince, ago, refresh, quickAdd,
+  h, avatar, fmtDate, fmtRange, parseDate, todayISO, todayLabel, daysSince, ago, plural, refresh, quickAdd,
   openDrawer, drawerFrame, block, kv,
 } from "../ui.js";
 import { state, saveSetting, isOpenDeal, create, byId } from "../store.js";
 import { openForm } from "../form.js";
-import { editRecord, taskList, openDeal, openPerson, openContact, dealIssues, logContact, takeDeal, finishTask } from "../detail.js";
-import { summary as pipeline } from "./deals.js";
+import { editRecord, taskList, openDeal, openPerson, openContact, dealIssues, stalledDays, logContact, takeDeal, finishTask } from "../detail.js";
+import { STAGES } from "../schema.js";
 
 let showAll = false;
 const ATTENTION_LIMIT = 6;
@@ -168,6 +168,25 @@ function activity() {
   })));
 }
 
+// The pipeline in three lines: deals by stage, what's stalled, and the estimate
+// with how many deals it rests on. The full view is the Deal Tracker.
+function pipeline() {
+  if (!state.deals.length) return null;
+  const open = state.deals.filter(isOpenDeal);
+  const sized = open.filter((d) => d.size_low != null || d.size_high != null);
+  const lo = sized.reduce((t, d) => t + (d.size_low ?? d.size_high), 0);
+  const hi = sized.reduce((t, d) => t + (d.size_high ?? d.size_low), 0);
+  const stalled = open.filter((d) => stalledDays(d) != null).length;
+  return section("Pipeline", h("a", { class: "link small", href: "#deals" }, "Open"),
+    h("ul", null, STAGES.map((s) => {
+      const n = state.deals.filter((d) => (d.stage || "lead") === s.value).length;
+      return n > 0 && h("li", { class: "arow arow--tight" }, h("span", { class: "dot c-" + s.value }), h("span", { class: "arow__main" }, s.label), h("span", { class: "num" }, n));
+    })),
+    (stalled > 0 || sized.length > 0) && h("div", { class: "small muted pipe__foot" },
+      stalled > 0 && h("span", { class: "stalled" }, `${stalled} stalled`),
+      sized.length > 0 && h("span", null, `${fmtRange(lo, hi)} estimated, on ${sized.length} of ${plural(open.length, "open deal")}`)));
+}
+
 function comingUp() {
   const all = state.milestones.filter((m) => !m.team_id);
   const key = (m) => (parseDate(m.date) ? m.date : "9999");
@@ -221,8 +240,7 @@ export function render() {
         h("h1", { class: "h1" }, greeting()),
         h("button", { class: "missionline", type: "button", onclick: openAbout, title: "Mission, values and what we sell" }, mission || "Write the mission")),
       h("span", { class: "top__date" }, todayLabel())),
-    state.deals.some(isOpenDeal) && h("a", { class: "striplink", href: "#deals", "aria-label": "Open the Deal Tracker" }, pipeline()),
     h("div", { class: "cols" },
       h("div", { class: "stack" }, attention(), todos(), targets(), activity()),
-      h("div", { class: "stack" }, comingUp(), team(), setup())));
+      h("div", { class: "stack" }, pipeline(), comingUp(), team(), setup())));
 }
