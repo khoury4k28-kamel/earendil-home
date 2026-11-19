@@ -1,18 +1,26 @@
-// Home: what needs doing today. It opens on the things that need attention,
-// each with a one-click action, then to-dos. Beside them: the pipeline in
-// brief, what's coming up and what each person is on. Company reference (mission, values, products) is one click away.
+// Home: one column, in the order you act on it. The next three dated events
+// (the radar), then one task list where every row has a tick, one action and
+// a snooze. Below: recent changes, targets, the pipeline in brief, the team
+// and a setup checklist. Company reference (mission, values, products) is one
+// click away.
 
 import {
-  h, avatar, fmtDate, fmtRange, parseDate, todayISO, todayLabel, daysSince, ago, plural, refresh, quickAdd,
+  h, avatar, fmtDate, fmtRange, parseDate, todayISO, daysSince, ago, plural, refresh, toast, quickAdd,
   openDrawer, drawerFrame, block, kv,
 } from "../ui.js";
-import { state, saveSetting, isOpenDeal, create, byId } from "../store.js";
+import { state, saveSetting, isOpenDeal, create, byId, personName } from "../store.js";
 import { openForm } from "../form.js";
-import { editRecord, taskList, openDeal, openPerson, openContact, dealIssues, stalledDays, logContact, takeDeal, finishTask } from "../detail.js";
-import { STAGES } from "../schema.js";
+import {
+  editRecord, openDeal, openPerson, openContact, dealIssues, stalledDays,
+  logContact, takeDeal, finishTask, clearToConfirm,
+} from "../detail.js";
+import { STAGES, stageLabel } from "../schema.js";
 
 let showAll = false;
-const ATTENTION_LIMIT = 6;
+let radarAll = false;
+const TASK_LIMIT = 5;
+const RADAR_LIMIT = 3;
+const SNOOZE_DAYS = 7;
 
 // ---------- company reference, in a side panel ----------
 function editCompany() {
@@ -89,60 +97,116 @@ function section(title, action, ...body) {
   return h("section", { class: "sec" }, h("div", { class: "sec__head" }, h("h2", { class: "sec__title" }, title), action), body);
 }
 const smallBtn = (label, onclick) => h("button", { class: "btn btn--small", type: "button", onclick }, label);
+const moreBtn = (hidden, open, toggle) => (hidden > 0 || open) &&
+  h("button", { class: "more", type: "button", onclick: toggle }, open ? "Show fewer" : `+ ${hidden} more`);
+// "a · b · c", where a part may be text or an element.
+const dots = (parts) => parts.filter(Boolean).flatMap((x, i) => (i ? [" · ", x] : [x]));
 
 // Opens a deal with the field that needs filling already under the cursor.
 function openAt(id, field) {
   openDeal(id);
   const el = document.getElementById(`${field}-${id}`);
-  if (field === "next") el?.click(); else el?.focus();
+  if (el?.classList.contains("inline")) el.click(); else el?.focus();
 }
 
-function attentionItems() {
+// ---------- radar: the next dated events ----------
+function radar() {
+  const all = state.milestones.filter((m) => !m.team_id);
+  const key = (m) => (parseDate(m.date) ? m.date : "9999");
+  const ahead = all.filter((m) => m.status !== "done").sort((a, b) => key(a).localeCompare(key(b)));
+  const done = all.filter((m) => m.status === "done").sort((a, b) => key(b).localeCompare(key(a)));
+  const shown = radarAll ? ahead : ahead.slice(0, RADAR_LIMIT);
+  const when = (m) => {
+    const d = parseDate(m.date) ? -daysSince(m.date) : null;
+    return d == null || d < 0 ? "" : d === 0 ? "today" : d === 1 ? "tomorrow" : `in ${d} days`;
+  };
+  return section(ahead.length > RADAR_LIMIT && !radarAll ? `Radar · Next ${RADAR_LIMIT}` : "Radar",
+    smallBtn("Add", () => editRecord("milestones", null, { status: "upcoming", kind: "company" })),
+    ahead.length
+      ? h("ol", null, shown.map((m, i) => h("li", { class: "rrow" },
+          h("span", { class: "rrow__n num", "aria-hidden": "true" }, String(i + 1).padStart(2, "0")),
+          h("button", { class: "arow__main", type: "button", onclick: () => editRecord("milestones", m) },
+            h("div", { class: "rrow__title" }, m.title),
+            h("div", { class: "arow__text" }, dots([m.date_label || fmtDate(m.date) || "No date", when(m)]))))))
+      : h("div", { class: "muted rrow" }, "Nothing scheduled."),
+    moreBtn(ahead.length - shown.length, radarAll, () => { radarAll = !radarAll; refresh(); }),
+    radarAll && done.length > 0 && h("details", { class: "past" }, h("summary", null, `${done.length} done`), milestoneRows(done)));
+}
+
+// ---------- tasks: to-dos and deal follow-ups in one list ----------
+// Snoozing hides a row for a week, for this person on this device only.
+function snoozed() {
+  try {
+    const all = JSON.parse(localStorage.getItem("home-snoozed") || "{}");
+    const now = Date.now();
+    return Object.fromEntries(Object.entries(all).filter(([, until]) => until > now));
+  } catch { return {}; }
+}
+function setSnoozed(map) {
+  try { localStorage.setItem("home-snoozed", JSON.stringify(map)); } catch { /* storage may be blocked */ }
+  refresh();
+}
+function snooze(key) {
+  const before = snoozed();
+  setSnoozed({ ...before, [key]: Date.now() + SNOOZE_DAYS * 864e5 });
+  toast(`Hidden for ${SNOOZE_DAYS} days on this device.`, ["Undo", () => setSnoozed(before)]);
+}
+
+const DEAL_TASK = {
+  stalled: (d) => ({ title: `Follow up on ${d.name}`, action: ["Log contact", () => logContact("deals", d)] }),
+  owner: (d) => ({ title: `Assign an owner to ${d.name}`,
+    action: state.me.id ? ["Take it", () => takeDeal(d)] : ["Assign", () => openAt(d.id, "owner")] }),
+  next: (d) => ({ title: `Set the next step for ${d.name}`, action: ["Add next step", () => openAt(d.id, "next")] }),
+  touch: (d) => ({ title: `Log the last contact on ${d.name}`, action: ["Add date", () => openAt(d.id, "touch")] }),
+  confirm: (d) => ({ title: `Confirm the details of ${d.name}`, action: ["Review", () => openDeal(d.id)], tick: () => clearToConfirm(d) }),
+};
+
+function taskItems() {
   const today = todayISO();
   const items = [];
   for (const t of state.tasks) {
-    if (t.status === "done" || !t.due) continue;
-    const overdue = t.due < today;
-    if (!overdue && -daysSince(t.due) > 7) continue;
+    if (t.status === "done") continue;
+    const overdue = Boolean(t.due && t.due < today);
+    const soon = Boolean(t.due && !overdue && -daysSince(t.due) <= 7);
+    if (!(t.company_wide || (state.me.id && t.owner_id === state.me.id) || overdue || soon)) continue;
+    const edit = () => editRecord("tasks", t);
     items.push({
-      rank: overdue ? 0 : 4, red: overdue, title: t.title,
-      text: overdue ? `Overdue since ${fmtDate(t.due)}` : `Due ${fmtDate(t.due)}`,
-      open: () => editRecord("tasks", t),
-      action: ["Done", () => finishTask(t)],
+      key: "task:" + t.id, rank: overdue ? 0 : 2, sort: t.due || "9", title: t.title, open: edit, tick: () => finishTask(t),
+      action: !personName(t.owner_id) && ["Assign", edit],
+      meta: [personName(t.owner_id), overdue ? h("span", { class: "red" }, `Overdue since ${fmtDate(t.due)}`) : t.due && `Due ${fmtDate(t.due)}`,
+        t.status === "doing" && "In progress", byId("deals", t.deal_id)?.name],
     });
   }
   for (const d of state.deals) {
     const issues = dealIssues(d);
     if (!issues.length) continue;
     const top = issues[0];
-    const action =
-      top.key === "stalled" || top.key === "touch" ? ["Log contact today", () => logContact("deals", d)]
-      : top.key === "owner" ? (state.me.id ? ["Take it", () => takeDeal(d)] : ["Assign", () => openAt(d.id, "owner")])
-      : top.key === "next" ? ["Add next step", () => openAt(d.id, "next")]
-      : ["Review", () => openDeal(d.id)];
-    items.push({ rank: 1 + top.rank, red: top.key === "stalled", title: d.name, text: issues.slice(0, 2).map((i) => i.text).join(" · "), open: () => openDeal(d.id), action });
+    const task = DEAL_TASK[top.key](d);
+    items.push({
+      key: `deal:${d.id}:${top.key}`, rank: top.key === "stalled" ? 1 : 3 + top.rank, sort: d.name, title: task.title,
+      open: () => openDeal(d.id), tick: task.tick || task.action[1], action: task.action,
+      meta: [d.organisation !== d.name && d.organisation, stageLabel(d.stage),
+        top.key === "stalled" && h("span", { class: "red" }, top.text), ...issues.slice(1, 2).map((i) => i.text)],
+    });
   }
-  return items.sort((a, b) => a.rank - b.rank || a.title.localeCompare(b.title));
+  return items.sort((a, b) => a.rank - b.rank || a.sort.localeCompare(b.sort));
 }
 
-function attention() {
-  const items = attentionItems();
-  if (!items.length) return section("Needs attention", null, h("div", { class: "muted" }, "Nothing right now."));
-  const shown = showAll ? items : items.slice(0, ATTENTION_LIMIT);
-  return section(`Needs attention · ${items.length}`,
-    items.length > ATTENTION_LIMIT && h("button", { class: "link small", type: "button", onclick: () => { showAll = !showAll; refresh(); } }, showAll ? "Show fewer" : "Show all"),
-    h("ul", null, shown.map((it) => h("li", { class: "arow" },
-      h("span", { class: "adot" + (it.red ? " adot--red" : "") }),
+function tasks() {
+  const hidden = snoozed();
+  const all = taskItems();
+  const items = all.filter((it) => !hidden[it.key]);
+  const shown = showAll ? items : items.slice(0, TASK_LIMIT);
+  const asleep = all.length - items.length;
+  return section(`Tasks · ${items.length}`,
+    asleep > 0 && h("button", { class: "more more--head", type: "button", onclick: () => setSnoozed({}) }, `${asleep} snoozed · Show`),
+    h("ul", null, shown.map((it) => h("li", { class: "arow trow" },
+      h("button", { class: "check", type: "button", role: "checkbox", "aria-checked": "false", "aria-label": "Done: " + it.title, onclick: it.tick }),
       h("button", { class: "arow__main", type: "button", onclick: it.open },
-        h("div", { class: "arow__title" }, it.title), h("div", { class: "arow__text" }, it.text)),
-      smallBtn(it.action[0], it.action[1])))));
-}
-
-function todos() {
-  const tasks = state.tasks.filter((t) => t.company_wide || (state.me.id && t.owner_id === state.me.id));
-  const open = tasks.filter((t) => t.status !== "done").length;
-  return section(`To-dos · ${open}`, null,
-    taskList(tasks),
+        h("div", { class: "arow__title" }, it.title), h("div", { class: "arow__text" }, dots(it.meta))),
+      it.action && h("button", { class: "btn", type: "button", onclick: it.action[1] }, it.action[0]),
+      h("button", { class: "quiet", type: "button", "aria-label": "Snooze: " + it.title, onclick: () => snooze(it.key) }, "Snooze")))),
+    moreBtn(items.length - shown.length, showAll, () => { showAll = !showAll; refresh(); }),
     quickAdd("quick-todo", "Add a to-do", (title) => create("tasks", { title, status: "todo", company_wide: true, owner_id: state.me.id || null })));
 }
 
@@ -187,16 +251,6 @@ function pipeline() {
       sized.length > 0 && h("span", null, `${fmtRange(lo, hi)} estimated, on ${sized.length} of ${plural(open.length, "open deal")}`)));
 }
 
-function comingUp() {
-  const all = state.milestones.filter((m) => !m.team_id);
-  const key = (m) => (parseDate(m.date) ? m.date : "9999");
-  const ahead = all.filter((m) => m.status !== "done").sort((a, b) => key(a).localeCompare(key(b)));
-  const done = all.filter((m) => m.status === "done").sort((a, b) => key(b).localeCompare(key(a)));
-  return section("Coming up", smallBtn("Add", () => editRecord("milestones", null, { status: "upcoming", kind: "company" })),
-    ahead.length ? milestoneRows(ahead) : h("div", { class: "muted small" }, "Nothing scheduled."),
-    done.length > 0 && h("details", { class: "past" }, h("summary", null, `${done.length} done`), milestoneRows(done)));
-}
-
 function team() {
   if (!state.people.length) return null;
   return section("Team", h("a", { class: "link small", href: "#people" }, "All"),
@@ -229,18 +283,14 @@ function greeting() {
   const hour = new Date().getHours();
   const part = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
   const first = (state.me.name || "").split(" ")[0];
-  return first ? `${part}, ${first}` : part;
+  return (first ? `${part}, ${first}` : part) + ".";
 }
 
 export function render() {
   const mission = state.settings.mission;
-  return h("main", { class: "page" },
-    h("div", { class: "page-head" },
-      h("div", { class: "page-head__text" },
-        h("h1", { class: "h1" }, greeting()),
-        h("button", { class: "missionline", type: "button", onclick: openAbout, title: "Mission, values and what we sell" }, mission || "Write the mission")),
-      h("span", { class: "top__date" }, todayLabel())),
-    h("div", { class: "cols" },
-      h("div", { class: "stack" }, attention(), todos(), targets(), activity()),
-      h("div", { class: "stack" }, pipeline(), comingUp(), team(), setup())));
+  return h("main", { class: "page page--home" },
+    h("div", { class: "page-head__text" },
+      h("h1", { class: "h1" }, greeting()),
+      h("button", { class: "missionline", type: "button", onclick: openAbout, title: "Mission, values and what we sell" }, mission || "Write the mission")),
+    radar(), tasks(), activity(), targets(), pipeline(), team(), setup());
 }

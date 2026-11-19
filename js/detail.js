@@ -62,7 +62,7 @@ export function finishTask(task) {
   update("tasks", task.id, { status: "done" });
   toast("Marked done.", ["Undo", () => update("tasks", task.id, { status: before })]);
 }
-function clearToConfirm(deal) {
+export function clearToConfirm(deal) {
   const before = deal.to_confirm;
   update("deals", deal.id, { to_confirm: null });
   toast("Marked as confirmed.", ["Undo", () => update("deals", deal.id, { to_confirm: before })]);
