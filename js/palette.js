@@ -18,7 +18,7 @@ function items(extra) {
     ["New milestone", () => editRecord("milestones", null, { status: "upcoming", kind: "company" })],
     ["New target", () => editRecord("goals", null, {})],
   ].map(([label, run]) => ({ group: "Create", label, sub: "", run }));
-  const go = [["Home", "home"], ["People", "people"], ["Teams", "teams"], ["Deal Tracker", "deals"], ["CRM", "crm"]]
+  const go = [["Home", "home"], ["People", "people"], ["Teams", "teams"], ["Deal Tracker", "deals"], ["CRM", "crm"], ["CRM map", "crm/map"], ["CRM list", "crm/list"]]
     .map(([label, id]) => ({ group: "Go to", label, sub: "", run: () => { location.hash = id; } }));
   const records = [
     ...state.deals.map((d) => ({ group: "Deals", label: d.name, sub: [stageLabel(d.stage), d.organisation].filter(Boolean).join(" · "), run: () => openDeal(d.id) })),

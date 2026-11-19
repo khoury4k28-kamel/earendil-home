@@ -59,12 +59,26 @@ export async function create(table, values) {
   try { await backend.insert(table, row); } catch (err) { failed(err, before, table); return null; }
   return row;
 }
-export async function update(table, id, patch) {
+export async function update(table, id, patch, { quiet = false } = {}) {
   const before = state[table];
   state[table] = before.map((r) => (r.id === id ? { ...r, ...patch } : r));
   emit();
-  try { await backend.update(table, id, patch); } catch (err) { failed(err, before, table); return false; }
+  try { await backend.update(table, id, patch); } catch (err) {
+    if (quiet) { console.warn(err); state[table] = before; emit(); } else failed(err, before, table);
+    return false;
+  }
   return true;
+}
+
+// Notes where the signed-in person is opening the hub from: their device's
+// time zone and the time. No GPS and no outside service. Written at most
+// every half hour, and never shown as an error if it can't be saved.
+export function recordPresence(tz) {
+  const me = byId("people", state.me.id);
+  if (!me || !tz) return;
+  const fresh = me.seen_at && Date.now() - new Date(me.seen_at).getTime() < 30 * 60 * 1000;
+  if (me.tz === tz && fresh) return;
+  update("people", me.id, { tz, seen_at: new Date().toISOString() }, { quiet: true });
 }
 export async function remove(table, id) {
   const before = state[table];

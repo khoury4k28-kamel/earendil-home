@@ -4,7 +4,8 @@
 import { config } from "./config.js";
 import { h, setRerender, paintDrawer, closeDrawer, openDialog, toast } from "./ui.js";
 import { openPalette } from "./palette.js";
-import { state, init, subscribe, isOpenDeal } from "./store.js";
+import { state, init, subscribe, isOpenDeal, recordPresence } from "./store.js";
+import { deviceZone } from "./places.js";
 import { previewBackend, supabaseClient, supabaseBackend } from "./backends.js";
 import * as home from "./views/home.js";
 import * as people from "./views/people.js";
@@ -26,14 +27,15 @@ let client = null;
 let ready = false;
 let notice = null;
 
+// "#crm/map" is the CRM section, map page.
 const route = () => {
-  const id = location.hash.replace("#", "");
-  return TABS.find((t) => t.id === id) || TABS.find((t) => t.id === "home");
+  const [id, sub] = location.hash.replace("#", "").split("/");
+  return { tab: TABS.find((t) => t.id === id) || TABS.find((t) => t.id === "home"), sub: sub || "" };
 };
 
 // The sections run down a sidebar on the left. On a phone the sidebar folds
 // into a strip across the top.
-function shell(tab) {
+function shell(tab, sub) {
   return [h("div", { class: "shell" },
     h("aside", { class: "side" },
       h("a", { class: "brand", href: "#home" },
@@ -51,7 +53,7 @@ function shell(tab) {
           : h("span", { class: "tag tag--solid", title: "Showing the local seed file. Changes aren't saved." }, "Preview · not saved"))),
     h("div", { class: "main" },
       notice && h("div", { class: "notice" }, h("b", null, notice[0]), notice[1]),
-      tab.view.render()))];
+      tab.view.render(sub)))];
 }
 
 const palette = () => ready && openPalette([["About Earendil", home.openAbout]]);
@@ -63,9 +65,9 @@ function render() {
   if (a && a.dataset?.editing && app.contains(a)) return;
   // Keep the cursor where it was if the screen redraws while someone is typing.
   const keep = a && a.id && app.contains(a) ? { id: a.id, start: a.selectionStart, end: a.selectionEnd } : null;
-  const tab = route();
+  const { tab, sub } = route();
   document.title = tab.id === "home" ? "Earendil Home" : `${tab.label} · Earendil Home`;
-  app.replaceChildren(...shell(tab));
+  app.replaceChildren(...shell(tab, sub));
   if (keep) {
     const el = document.getElementById(keep.id);
     if (el) {
@@ -155,6 +157,7 @@ async function start(user) {
   }
   ready = true;
   render();
+  recordPresence(deviceZone());
 }
 
 async function boot() {

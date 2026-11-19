@@ -3,8 +3,9 @@
 
 import {
   h, avatar, kv, block, drawerFrame, openDrawer, closeDrawer, toast, inlineEdit, quickAdd,
-  fmtDate, fmtDateTime, fmtRange, daysSince, todayISO,
+  fmtDate, fmtDateTime, fmtRange, daysSince, todayISO, ago,
 } from "./ui.js";
+import { zonePlace, timeIn } from "./places.js";
 import {
   state, byId, create, update, remove, addNote, personName, teamName, sortByName,
   dealsForPerson, dealsForContact, tasksForPerson, notesFor, isOpenDeal,
@@ -181,7 +182,8 @@ export function openPerson(id) {
           ["Reports to", pickPerson({ value: p.reports_to, blank: "Nobody set", exclude: id, label: "Reports to", onChange: save("reports_to") })],
           ["Direct reports", reports.length && h("div", { class: "chips" }, reports.map((r) => personChip(r.id)))],
           ["Email", inlineEdit({ id: `email-${id}`, value: p.email, placeholder: "Add email", label: "Email", type: "email", onSave: save("email") })],
-          ["Based in", p.location],
+          ["Based in", inlineEdit({ id: `loc-${id}`, value: p.location, placeholder: "Add city or country", label: "Based in", onSave: save("location") })],
+          ["Now", zonePlace(p.tz) && `${zonePlace(p.tz).city} time, ${timeIn(p.tz)}` + (p.seen_at ? ` · seen ${ago(p.seen_at)}` : "")],
           ["Note", p.note],
         ])),
       tasksBlock(tasksForPerson(id), `task-person-${id}`, { owner_id: id }, { showOwner: false }),
@@ -238,7 +240,7 @@ export function openContact(id) {
       kv([
         ["Email", inlineEdit({ id: `email-${id}`, value: c.email, placeholder: "Add email", label: "Email", type: "email", onSave: save("email") })],
         ["Phone", inlineEdit({ id: `phone-${id}`, value: c.phone, placeholder: "Add phone", label: "Phone", type: "tel", onSave: save("phone") })],
-        ["Country", c.country],
+        ["Country", inlineEdit({ id: `country-${id}`, value: c.country, placeholder: "Add country", label: "Country", onSave: save("country") })],
         ["Who knows them", pickPerson({ value: c.owner_id, blank: "Nobody set", label: "Who knows them", onChange: save("owner_id") })],
         ["Last contact", contactDate("contacts", c)],
       ]),

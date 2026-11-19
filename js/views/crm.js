@@ -1,10 +1,13 @@
-// CRM: every contact in one table, split by category. Tick rows to copy their
-// addresses or open one email to all of them.
+// CRM: every client and contact. It opens on two cards (the map and the
+// list). In the list, tick rows to copy their addresses or open one email to
+// all of them.
 
 import { h, fmtDate, plural, refresh, toast, inlineEdit } from "../ui.js";
-import { state, update, dealsForContact, dealsForPerson } from "../store.js";
+import { state, update, dealsForContact, dealsForPerson, sortByName } from "../store.js";
 import { CATEGORIES, categoryLabel } from "../schema.js";
 import { editRecord, openContact, openPerson, pickPerson } from "../detail.js";
+import { findCountry } from "../places.js";
+import * as map from "./map.js";
 
 let filter = "all";
 let query = "";
@@ -59,7 +62,39 @@ function check(checked, label, onchange) {
   return box;
 }
 
-export function render() {
+const addContact = () => editRecord("contacts", null, { kind: "person", category: filter !== "all" && filter !== "team" ? filter : "partner", status: "In contact" });
+
+// ---------- landing: one line of counts, then a card for each way in ----------
+function tile(href, preview, title, text, go) {
+  return h("a", { class: "tile", href },
+    h("div", { class: "tile__preview" }, preview),
+    h("div", { class: "tile__body" }, h("h2", { class: "tile__title" }, title), h("p", { class: "sub" }, text), h("span", { class: "tile__go" }, go + " →")));
+}
+function landing() {
+  const contacts = state.contacts;
+  const countries = new Set(contacts.map((c) => findCountry(c.country)?.code).filter(Boolean));
+  const count = (value) => contacts.filter((c) => c.category === value).length;
+  const linked = contacts.filter((c) => dealsForContact(c.id).length).length;
+  const line = [
+    plural(contacts.length, "contact"), plural(countries.size, "country", "countries"),
+    count("client") > 0 && plural(count("client"), "client"), count("investor") > 0 && plural(count("investor"), "investor"),
+    linked > 0 && `${linked} linked to a deal`,
+  ].filter(Boolean).join(" · ");
+  return h("main", { class: "page" },
+    h("div", { class: "page-head" },
+      h("div", { class: "title-line" }, h("h1", { class: "h1" }, "CRM"), h("span", { class: "muted" }, line)),
+      h("button", { class: "btn btn--primary", type: "button", onclick: addContact }, "Add contact")),
+    h("div", { class: "tiles" },
+      tile("#crm/map", map.miniMap(), "Map", "Where clients, contacts and deals are, by country. Click a country to see who is there.", "Open the map"),
+      tile("#crm/list",
+        h("div", { class: "minilist" }, sortByName(contacts).slice(0, 5).map((c) => h("div", { class: "minirow" },
+          h("b", null, c.name), h("span", { class: "muted" }, [categoryLabel(c.category), findCountry(c.country)?.code].filter(Boolean).join(" · "))))),
+        "List", "Every contact in one table. Search, filter by category, and email a group at once.", "Open the list")));
+}
+
+export function render(sub) {
+  if (sub === "map") return map.render();
+  if (sub !== "list") return landing();
   const all = rows();
   const counts = { all: all.length, team: all.filter((r) => r.isTeam).length };
   for (const c of CATEGORIES) counts[c.value] = all.filter((r) => r.category === c.value).length;
@@ -73,8 +108,8 @@ export function render() {
 
   return h("main", { class: "page" },
     h("div", { class: "page-head" },
-      h("h1", { class: "h1" }, "CRM"),
-      h("button", { class: "btn btn--primary", type: "button", onclick: () => editRecord("contacts", null, { kind: "person", category: filter !== "all" && filter !== "team" ? filter : "partner", status: "In contact" }) }, "Add contact")),
+      h("div", { class: "crumbs crumbs--page" }, h("a", { href: "#crm" }, "CRM"), h("span", { class: "muted" }, " / "), h("b", null, "List")),
+      h("button", { class: "btn btn--primary", type: "button", onclick: addContact }, "Add contact")),
     h("div", { class: "filters" },
       tabs.map((t) => h("button", { class: "filter", type: "button", "aria-pressed": String(filter === t.value), onclick: () => { filter = t.value; refresh(); } },
         t.many, h("span", { class: "num" }, counts[t.value]))),

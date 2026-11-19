@@ -60,6 +60,10 @@ create table if not exists public.people (
   updated_by text
 );
 
+-- Where each person last opened the hub from: their device's time zone, and when.
+alter table public.people add column if not exists tz text;
+alter table public.people add column if not exists seen_at timestamptz;
+
 create table if not exists public.teams (
   id text primary key default gen_random_uuid()::text,
   name text not null,
