@@ -2,15 +2,15 @@
 // screens share: task lists, notes, and the add/edit form for any record.
 
 import {
-  h, avatar, kv, block, drawerFrame, openDrawer, closeDrawer, emptyState,
-  fmtDate, fmtDateTime, fmtRange, daysSince,
+  h, avatar, kv, block, drawerFrame, openDrawer, closeDrawer, toast, inlineEdit, quickAdd,
+  fmtDate, fmtDateTime, fmtRange, daysSince, todayISO,
 } from "./ui.js";
 import {
-  state, byId, create, update, remove, addNote, personName, teamName,
+  state, byId, create, update, remove, addNote, personName, teamName, sortByName,
   dealsForPerson, dealsForContact, tasksForPerson, notesFor, isOpenDeal,
 } from "./store.js";
 import { openForm } from "./form.js";
-import { fieldsFor, NOUN, STAGES, stageLabel, categoryLabel, SOURCES } from "./schema.js";
+import { fieldsFor, NOUN, STAGES, stageLabel, categoryLabel } from "./schema.js";
 
 // ---------- add / edit any record ----------
 export function editRecord(table, record, defaults = {}) {
@@ -36,6 +36,38 @@ export function personChip(id) {
   return h("button", { class: "person-chip", type: "button", onclick: () => openPerson(id) }, avatar(p.name, "s"), p.name);
 }
 
+// A person chosen in place, without opening the edit form.
+export function pickPerson({ id, value, blank = "Nobody yet", label, exclude, onChange }) {
+  const current = byId("people", value) ? value : "";
+  const sel = h("select", { class: "pick" + (current ? "" : " pick--empty"), id, "aria-label": label, onclick: (e) => e.stopPropagation() },
+    h("option", { value: "" }, blank),
+    sortByName(state.people).filter((p) => p.id !== exclude).map((p) => h("option", { value: p.id, selected: p.id === current }, p.name)));
+  sel.addEventListener("change", () => onChange(sel.value || null));
+  return sel;
+}
+
+// One-click changes, each with a way back.
+export function logContact(table, rec) {
+  const before = rec.last_touch || null;
+  update(table, rec.id, { last_touch: todayISO() });
+  toast(`Contact with ${rec.name} logged for today.`, ["Undo", () => update(table, rec.id, { last_touch: before })]);
+}
+export function takeDeal(deal) {
+  const before = deal.owner_id || null;
+  update("deals", deal.id, { owner_id: state.me.id });
+  toast(`${deal.name} is yours.`, ["Undo", () => update("deals", deal.id, { owner_id: before })]);
+}
+export function finishTask(task) {
+  const before = task.status;
+  update("tasks", task.id, { status: "done" });
+  toast("Marked done.", ["Undo", () => update("tasks", task.id, { status: before })]);
+}
+function clearToConfirm(deal) {
+  const before = deal.to_confirm;
+  update("deals", deal.id, { to_confirm: null });
+  toast("Marked as confirmed.", ["Undo", () => update("deals", deal.id, { to_confirm: before })]);
+}
+
 export function stalledDays(deal) {
   if (!isOpenDeal(deal) || !deal.last_touch) return null;
   const d = daysSince(deal.last_touch);
@@ -55,20 +87,27 @@ export function dealIssues(deal) {
   return out;
 }
 
-// Moves a deal to another stage and leaves a line in its history.
-export async function setStage(id, stage) {
+// Moves a deal to another stage and leaves a line in its history. With
+// `undo`, a slip (a card dropped in the wrong column) can be taken back.
+export async function setStage(id, stage, { undo = false } = {}) {
   const deal = byId("deals", id);
   if (!deal || deal.stage === stage) return;
-  const from = stageLabel(deal.stage);
-  await update("deals", id, { stage });
-  create("activity", {
-    entity_type: "deal", entity_id: id, body: `Moved from ${from} to ${stageLabel(stage)}`,
+  const before = deal.stage;
+  if (!(await update("deals", id, { stage }))) return;
+  const note = create("activity", {
+    entity_type: "deal", entity_id: id, body: `Moved from ${stageLabel(before)} to ${stageLabel(stage)}`,
     author: state.me.label || "Team", source: "system", created_at: new Date().toISOString(),
   });
+  if (!undo) return;
+  toast(`${deal.name} moved to ${stageLabel(stage)}.`, ["Undo", async () => {
+    update("deals", id, { stage: before });
+    const row = await note;
+    if (row) remove("activity", row.id);
+  }]);
 }
 
-export function taskList(tasks, { showOwner = true, empty = "No tasks yet." } = {}) {
-  if (!tasks.length) return h("div", { class: "muted small" }, empty);
+export function taskList(tasks, { showOwner = true } = {}) {
+  if (!tasks.length) return null;
   const order = { doing: 0, todo: 1, done: 2 };
   const sorted = [...tasks].sort((a, b) => order[a.status] - order[b.status] || String(a.due || "9").localeCompare(String(b.due || "9")));
   return h("ul", { class: "rows" }, sorted.map((t) => {
@@ -93,21 +132,27 @@ export function taskList(tasks, { showOwner = true, empty = "No tasks yet." } = 
 
 function notesBlock(type, id) {
   const notes = notesFor(type, id);
-  const input = h("input", { class: "input", id: `note-${type}-${id}`, placeholder: "Add a note", autocomplete: "off" });
-  const save = async () => {
-    const body = input.value.trim();
-    if (!body) return;
-    input.value = "";
-    await addNote(type, id, body);
-  };
-  input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); save(); } });
   return block("Notes",
-    h("div", { class: "inline-add" }, input, h("button", { class: "btn", type: "button", onclick: save }, "Add")),
-    notes.length
-      ? h("div", null, notes.map((n) => h("div", { class: "note" },
-          h("div", { class: "prose" }, n.body),
-          h("div", { class: "row__meta", title: n.author_email || null }, [n.author, fmtDateTime(n.created_at), n.source && !["manual", "system"].includes(n.source) && "via " + n.source].filter(Boolean).join(" · ")))))
-      : h("div", { class: "muted small" }, "No notes yet."));
+    quickAdd(`note-${type}-${id}`, "Add a note", (body) => addNote(type, id, body)),
+    notes.length > 0 && h("div", null, notes.map((n) => h("div", { class: "note" },
+      h("div", { class: "prose" }, n.body),
+      h("div", { class: "row__meta", title: n.author_email || null }, [n.author, fmtDateTime(n.created_at), n.source && !["manual", "system"].includes(n.source) && "via " + n.source].filter(Boolean).join(" · "))))));
+}
+
+function tasksBlock(tasks, idKey, defaults, opts) {
+  return block(`Tasks · ${tasks.filter((t) => t.status !== "done").length} open`,
+    taskList(tasks, opts),
+    quickAdd(idKey, "Add a task", (title) => create("tasks", { title, status: "todo", ...defaults })));
+}
+
+// The last-contact date, editable in place, with a one-click "Today".
+function contactDate(table, rec) {
+  const stalled = table === "deals" ? stalledDays(rec) : null;
+  return h("span", { class: "deal__left" },
+    inlineEdit({ id: `touch-${rec.id}`, value: rec.last_touch, display: fmtDate(rec.last_touch), placeholder: "Add date", label: "Last contact", type: "date",
+      onSave: (v) => update(table, rec.id, { last_touch: v }) }),
+    stalled && h("span", { class: "stalled" }, `Stalled ${stalled}d`),
+    rec.last_touch !== todayISO() && h("button", { class: "btn btn--small", type: "button", onclick: () => logContact(table, rec) }, "Today"));
 }
 
 function dealRows(deals) {
@@ -117,41 +162,30 @@ function dealRows(deals) {
       h("div", { class: "row__meta" }, [stageLabel(d.stage), fmtRange(d.size_low, d.size_high)].filter(Boolean).join(" · "))))));
 }
 
-function sourcesRow() {
-  return h("div", { class: "sources" }, SOURCES.map((s) => h("div", { class: "source" },
-    h("div", { class: "caps" }, s),
-    h("div", { class: "small muted" }, h("span", { class: "sq sq--open" }), "Not connected"))));
-}
-
 // ---------- person ----------
 export function openPerson(id) {
   openDrawer(() => {
     const p = byId("people", id);
     if (!p) return null;
-    const tasks = tasksForPerson(id);
     const deals = dealsForPerson(id);
     const reports = state.people.filter((x) => x.reports_to === id);
+    const save = (key) => (v) => update("people", id, { [key]: v });
     return drawerFrame(
       { eyebrow: teamName(p.team_id) || "Team member", title: p.name, sub: p.title, actions: editBtn("people", p) },
       block("Working on now",
-        p.focus ? h("div", { class: "prose" }, p.focus)
-          : emptyState("Not filled in yet.", "A line on what they're focused on this week.", editBtn("people", p))),
+        inlineEdit({ id: `focus-${id}`, value: p.focus, placeholder: "Add what they're focused on this week", label: "Working on now", multiline: true, onSave: save("focus") })),
       block("What they do",
-        p.responsibilities ? h("div", { class: "prose" }, p.responsibilities) : h("div", { class: "muted small" }, "Responsibilities not filled in yet."),
+        inlineEdit({ id: `resp-${id}`, value: p.responsibilities, placeholder: "Add responsibilities", label: "What they do", multiline: true, onSave: save("responsibilities") }),
         kv([
           ["Team", teamName(p.team_id)],
-          ["Reports to", p.reports_to && personChip(p.reports_to)],
+          ["Reports to", pickPerson({ value: p.reports_to, blank: "Nobody set", exclude: id, label: "Reports to", onChange: save("reports_to") })],
           ["Direct reports", reports.length && h("div", { class: "chips" }, reports.map((r) => personChip(r.id)))],
-          ["Email", p.email],
+          ["Email", inlineEdit({ id: `email-${id}`, value: p.email, placeholder: "Add email", label: "Email", type: "email", onSave: save("email") })],
           ["Based in", p.location],
           ["Note", p.note],
         ])),
-      block(`Tasks · ${tasks.filter((t) => t.status !== "done").length} open`,
-        taskList(tasks, { showOwner: false }),
-        h("div", null, addBtn("Add task", "tasks", { owner_id: id, status: "todo" }))),
-      block(`Deals · ${deals.length}`, deals.length ? dealRows(deals) : h("div", { class: "muted small" }, "Not on any deal yet.")),
-      block("Sources", sourcesRow(),
-        h("div", { class: "small muted" }, "Slack, email and Granola feeds aren't live yet. Until they are, this profile is filled in by hand.")),
+      tasksBlock(tasksForPerson(id), `task-person-${id}`, { owner_id: id }, { showOwner: false }),
+      deals.length > 0 && block(`Deals · ${deals.length}`, dealRows(deals)),
       notesBlock("person", id));
   });
 }
@@ -162,39 +196,31 @@ export function openDeal(id) {
     const d = byId("deals", id);
     if (!d) return null;
     const size = fmtRange(d.size_low, d.size_high);
-    const stalled = stalledDays(d);
-    const team = [...new Set([d.owner_id, ...(d.people_ids || [])].filter(Boolean))];
+    const team = (d.people_ids || []).filter((p) => p !== d.owner_id && byId("people", p));
     const outside = (d.contact_ids || []).map((c) => byId("contacts", c)).filter(Boolean);
-    const tasks = state.tasks.filter((t) => t.deal_id === id);
+    const save = (key) => (v) => update("deals", id, { [key]: v });
     return drawerFrame(
       { eyebrow: [d.kind && d.kind[0].toUpperCase() + d.kind.slice(1), d.region].filter(Boolean).join(" · ") || "Deal", title: d.name, sub: d.organisation, actions: editBtn("deals", d) },
-      block("Stage",
-        h("div", { class: "stage-pick" }, STAGES.map((s) => h("button", {
-          type: "button", "aria-pressed": String(d.stage === s.value),
-          onclick: () => setStage(id, s.value),
-        }, s.label)))),
-      d.to_confirm && h("div", { class: "confirm" }, h("div", { class: "caps" }, "To confirm"), h("div", null, d.to_confirm)),
-      block("Size",
-        size ? h("div", { class: "stat__v" }, size) : h("div", { class: "muted" }, "No size yet."),
-        d.size_note && h("div", { class: "small sub" }, d.size_note)),
-      block("Who's involved",
-        kv([
-          ["Owner", d.owner_id ? personChip(d.owner_id) : h("span", { class: "muted" }, "Nobody yet")],
-          ["Team", team.length > (d.owner_id ? 1 : 0) && h("div", { class: "chips" }, team.filter((p) => p !== d.owner_id).map(personChip))],
-          ["Outside", outside.length && h("div", { class: "chips" }, outside.map((c) =>
-            h("button", { class: "person-chip", type: "button", onclick: () => openContact(c.id) }, avatar(c.name, "s"), c.name)))],
-        ])),
-      block("Progress",
-        kv([
-          ["Next step", d.next_step || h("span", { class: "muted" }, "Not set")],
-          ["Last contact", d.last_touch
-            ? h("span", { class: "deal__left" }, fmtDate(d.last_touch), stalled && h("span", { class: "stalled" }, `Stalled ${stalled}d`))
-            : h("span", { class: "muted" }, "None logged")],
-        ]),
-        d.summary && h("div", { class: "prose" }, d.summary)),
-      block(`Tasks · ${tasks.filter((t) => t.status !== "done").length} open`,
-        taskList(tasks),
-        h("div", null, addBtn("Add task", "tasks", { deal_id: id, owner_id: d.owner_id || null, status: "todo" }))),
+      h("div", { class: "stage-pick", role: "group", "aria-label": "Stage" }, STAGES.map((s) => h("button", {
+        type: "button", "aria-pressed": String(d.stage === s.value),
+        onclick: () => setStage(id, s.value),
+      }, s.label))),
+      d.to_confirm && h("div", { class: "confirm" },
+        h("div", { class: "confirm__text" }, h("div", { class: "caps" }, "To confirm"), h("div", null, d.to_confirm)),
+        h("button", { class: "btn btn--small", type: "button", onclick: () => clearToConfirm(d) }, "Confirmed")),
+      kv([
+        ["Next step", inlineEdit({ id: `next-${id}`, value: d.next_step, placeholder: "Add next step", label: "Next step", onSave: save("next_step") })],
+        ["Last contact", contactDate("deals", d)],
+        ["Owner", pickPerson({ id: `owner-${id}`, value: d.owner_id, label: "Owner", onChange: save("owner_id") })],
+        ["Size", size
+          ? h("span", null, h("b", { class: "num" }, size), d.size_note && h("div", { class: "row__meta" }, d.size_note))
+          : h("button", { class: "inline inline--empty", type: "button", onclick: () => editRecord("deals", d) }, "Add size")],
+        ["Team", team.length > 0 && h("div", { class: "chips" }, team.map(personChip))],
+        ["Outside", outside.length > 0 && h("div", { class: "chips" }, outside.map((c) =>
+          h("button", { class: "person-chip", type: "button", onclick: () => openContact(c.id) }, avatar(c.name, "s"), c.name)))],
+      ]),
+      d.summary && h("div", { class: "prose sub" }, d.summary),
+      tasksBlock(state.tasks.filter((t) => t.deal_id === id), `task-deal-${id}`, { deal_id: id, owner_id: d.owner_id || null }),
       notesBlock("deal", id),
       d.source && h("div", { class: "small muted" }, "Source: " + d.source));
   });
@@ -206,18 +232,18 @@ export function openContact(id) {
     const c = byId("contacts", id);
     if (!c) return null;
     const deals = dealsForContact(id);
+    const save = (key) => (v) => update("contacts", id, { [key]: v });
     return drawerFrame(
       { eyebrow: [categoryLabel(c.category), c.status].filter(Boolean).join(" · "), title: c.name, sub: [c.title, c.organisation !== c.name && c.organisation].filter(Boolean).join(", "), actions: editBtn("contacts", c) },
-      block("Details",
-        kv([
-          ["Email", c.email || h("span", { class: "muted" }, "Not added yet")],
-          ["Phone", c.phone],
-          ["Country", c.country],
-          ["Who knows them", c.owner_id && personChip(c.owner_id)],
-          ["Last contact", c.last_touch && fmtDate(c.last_touch)],
-        ]),
-        c.notes && h("div", { class: "prose" }, c.notes)),
-      block(`Deals · ${deals.length}`, deals.length ? dealRows(deals) : h("div", { class: "muted small" }, "Not linked to a deal yet. Add them from the deal's edit form.")),
+      kv([
+        ["Email", inlineEdit({ id: `email-${id}`, value: c.email, placeholder: "Add email", label: "Email", type: "email", onSave: save("email") })],
+        ["Phone", inlineEdit({ id: `phone-${id}`, value: c.phone, placeholder: "Add phone", label: "Phone", type: "tel", onSave: save("phone") })],
+        ["Country", c.country],
+        ["Who knows them", pickPerson({ value: c.owner_id, blank: "Nobody set", label: "Who knows them", onChange: save("owner_id") })],
+        ["Last contact", contactDate("contacts", c)],
+      ]),
+      c.notes && h("div", { class: "prose sub" }, c.notes),
+      deals.length > 0 && block(`Deals · ${deals.length}`, dealRows(deals)),
       notesBlock("contact", id),
       c.source && h("div", { class: "small muted" }, "Source: " + c.source));
   });

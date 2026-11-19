@@ -3,12 +3,12 @@
 // person is on. Company reference (mission, values, products) is one click away.
 
 import {
-  h, avatar, fmtDate, parseDate, todayISO, todayLabel, daysSince, ago, refresh, toast,
+  h, avatar, fmtDate, parseDate, todayISO, todayLabel, daysSince, ago, refresh, quickAdd,
   openDrawer, drawerFrame, block, kv,
 } from "../ui.js";
-import { state, saveSetting, isOpenDeal, update, create, byId } from "../store.js";
+import { state, saveSetting, isOpenDeal, create, byId } from "../store.js";
 import { openForm } from "../form.js";
-import { editRecord, taskList, openDeal, openPerson, openContact, dealIssues } from "../detail.js";
+import { editRecord, taskList, openDeal, openPerson, openContact, dealIssues, logContact, takeDeal, finishTask } from "../detail.js";
 import { summary as pipeline } from "./deals.js";
 
 let showAll = false;
@@ -90,6 +90,13 @@ function section(title, action, ...body) {
 }
 const smallBtn = (label, onclick) => h("button", { class: "btn btn--small", type: "button", onclick }, label);
 
+// Opens a deal with the field that needs filling already under the cursor.
+function openAt(id, field) {
+  openDeal(id);
+  const el = document.getElementById(`${field}-${id}`);
+  if (field === "next") el?.click(); else el?.focus();
+}
+
 function attentionItems() {
   const today = todayISO();
   const items = [];
@@ -101,7 +108,7 @@ function attentionItems() {
       rank: overdue ? 0 : 4, red: overdue, title: t.title,
       text: overdue ? `Overdue since ${fmtDate(t.due)}` : `Due ${fmtDate(t.due)}`,
       open: () => editRecord("tasks", t),
-      action: ["Done", () => update("tasks", t.id, { status: "done" })],
+      action: ["Done", () => finishTask(t)],
     });
   }
   for (const d of state.deals) {
@@ -109,9 +116,9 @@ function attentionItems() {
     if (!issues.length) continue;
     const top = issues[0];
     const action =
-      top.key === "stalled" || top.key === "touch" ? ["Log contact today", () => { update("deals", d.id, { last_touch: today }); toast(`Contact logged on ${d.name}.`); }]
-      : top.key === "owner" ? (state.me.id ? ["Take it", () => update("deals", d.id, { owner_id: state.me.id })] : ["Assign", () => editRecord("deals", d)])
-      : top.key === "next" ? ["Add next step", () => editRecord("deals", d)]
+      top.key === "stalled" || top.key === "touch" ? ["Log contact today", () => logContact("deals", d)]
+      : top.key === "owner" ? (state.me.id ? ["Take it", () => takeDeal(d)] : ["Assign", () => openAt(d.id, "owner")])
+      : top.key === "next" ? ["Add next step", () => openAt(d.id, "next")]
       : ["Review", () => openDeal(d.id)];
     items.push({ rank: 1 + top.rank, red: top.key === "stalled", title: d.name, text: issues.slice(0, 2).map((i) => i.text).join(" · "), open: () => openDeal(d.id), action });
   }
@@ -134,16 +141,9 @@ function attention() {
 function todos() {
   const tasks = state.tasks.filter((t) => t.company_wide || (state.me.id && t.owner_id === state.me.id));
   const open = tasks.filter((t) => t.status !== "done").length;
-  const input = h("input", { id: "quick-todo", placeholder: "Add a to-do", autocomplete: "off", "aria-label": "Add a to-do" });
-  input.addEventListener("keydown", (e) => {
-    const title = input.value.trim();
-    if (e.key !== "Enter" || !title) return;
-    input.value = "";
-    create("tasks", { title, status: "todo", company_wide: true, owner_id: state.me.id || null });
-  });
   return section(`To-dos · ${open}`, null,
-    tasks.length > 0 && taskList(tasks),
-    h("div", { class: "quickadd" }, h("span", { "aria-hidden": "true" }, "+"), input));
+    taskList(tasks),
+    quickAdd("quick-todo", "Add a to-do", (title) => create("tasks", { title, status: "todo", company_wide: true, owner_id: state.me.id || null })));
 }
 
 function targets() {

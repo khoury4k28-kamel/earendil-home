@@ -1,10 +1,10 @@
 // CRM: every contact in one table, split by category. Tick rows to copy their
 // addresses or open one email to all of them.
 
-import { h, fmtDate, plural, refresh, toast } from "../ui.js";
-import { state, personName, dealsForContact, dealsForPerson } from "../store.js";
+import { h, fmtDate, plural, refresh, toast, inlineEdit } from "../ui.js";
+import { state, update, dealsForContact, dealsForPerson } from "../store.js";
 import { CATEGORIES, categoryLabel } from "../schema.js";
-import { editRecord, openContact, openPerson } from "../detail.js";
+import { editRecord, openContact, openPerson, pickPerson } from "../detail.js";
 
 let filter = "all";
 let query = "";
@@ -14,12 +14,12 @@ const selected = new Set();
 function rows() {
   const team = state.people.map((p) => ({
     key: "p:" + p.id, id: p.id, isTeam: true, name: p.name, title: p.title, organisation: "Earendil Robotics",
-    category: "team", status: "", email: p.email, owner: "", last_touch: null, deals: dealsForPerson(p.id).length,
+    category: "team", status: "", email: p.email, owner_id: null, last_touch: null, deals: dealsForPerson(p.id).length,
     hay: [p.name, p.title, p.location].join(" "),
   }));
   const contacts = state.contacts.map((c) => ({
     key: "c:" + c.id, id: c.id, isTeam: false, name: c.name, title: c.title, organisation: c.organisation,
-    category: c.category, status: c.status, email: c.email, owner: personName(c.owner_id), last_touch: c.last_touch,
+    category: c.category, status: c.status, email: c.email, owner_id: c.owner_id, last_touch: c.last_touch,
     deals: dealsForContact(c.id).length, hay: [c.name, c.title, c.organisation, c.country, c.notes].join(" "),
   }));
   return [...contacts, ...team].sort((a, b) => a.name.localeCompare(b.name));
@@ -92,8 +92,10 @@ export function render() {
             h("td", null, r.organisation !== r.name ? r.organisation : ""),
             h("td", { class: "tight" }, r.isTeam ? "Team" : categoryLabel(r.category),
               r.status && r.status !== "In contact" && h("div", { class: "row__meta" }, r.status)),
-            h("td", null, r.email || h("span", { class: "muted" }, "Not added")),
-            h("td", { class: "tight" }, r.owner || h("span", { class: "muted" }, r.isTeam ? "" : "Nobody set")),
+            h("td", { class: "cell-edit" }, inlineEdit({ id: "email-" + r.key, value: r.email, placeholder: "Add email", label: `Email for ${r.name}`, type: "email",
+              onSave: (v) => update(r.isTeam ? "people" : "contacts", r.id, { email: v }) })),
+            h("td", { class: "tight" }, !r.isTeam && pickPerson({ value: r.owner_id, blank: "Nobody set", label: `Who knows ${r.name}`,
+              onChange: (v) => update("contacts", r.id, { owner_id: v }) })),
             h("td", { class: "tight" }, r.last_touch ? fmtDate(r.last_touch) : ""),
             h("td", { class: "tight num" }, r.deals || "")))))),
     selectionBar(all));

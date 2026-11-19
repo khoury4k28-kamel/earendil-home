@@ -122,18 +122,90 @@ export function kv(pairs) {
 }
 
 // ---------- toast ----------
+// A short message at the foot of the screen. Pass ["Undo", fn] to offer a way back.
 let toastTimer;
-export function toast(msg) {
+export function toast(msg, action) {
   const el = document.getElementById("toast");
-  el.textContent = msg;
+  const clear = () => el.replaceChildren();
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { el.textContent = ""; }, 3600);
+  el.replaceChildren(h("span", null, msg),
+    action && h("button", { class: "toast__btn", type: "button", onclick: () => { clearTimeout(toastTimer); clear(); action[1](); } }, action[0]));
+  toastTimer = setTimeout(clear, action ? 7000 : 3600);
 }
 
 // ---------- re-render hook (set by app.js) ----------
 let rerender = () => {};
 export function setRerender(fn) { rerender = fn; }
-export function refresh() { rerender(); }
+export function refresh() { rerender(); paintDrawer(); }
+
+// ---------- edit in place ----------
+let pointerDown = false;
+window.addEventListener("pointerdown", () => { pointerDown = true; }, true);
+for (const type of ["pointerup", "pointercancel"]) window.addEventListener(type, () => { pointerDown = false; }, true);
+
+// Text that turns into a field when clicked. Enter or clicking away saves, Esc
+// cancels. While the field is open the screen isn't redrawn underneath it.
+export function inlineEdit({ id, value, display, placeholder, label, type = "text", multiline = false, onSave }) {
+  const current = value == null ? "" : String(value);
+  const show = h("button", {
+    class: "inline" + (current ? "" : " inline--empty") + (multiline ? " prose" : ""), type: "button", id,
+    "aria-label": `${label || placeholder}: ${current ? display || current : "not set"}. Edit`,
+    onclick: (e) => { e.stopPropagation(); edit(); },
+  }, current ? display || current : placeholder);
+
+  function edit() {
+    const input = h(multiline ? "textarea" : "input", {
+      class: multiline ? "textarea" : "input", type: multiline ? null : type, placeholder, "aria-label": label || placeholder,
+      "data-editing": "1", autocomplete: "off", onclick: (e) => e.stopPropagation(),
+    });
+    input.value = current;
+    let finished = false;
+    const finish = (save, byKey) => {
+      if (finished) return;
+      finished = true;
+      const next = input.value.trim();
+      if (save && next && !input.checkValidity()) { toast("That doesn't look right. Nothing was changed."); save = false; }
+      input.removeAttribute("data-editing");
+      if (input.isConnected) input.replaceWith(show);
+      if (byKey) show.focus();
+      if (save && next !== current) onSave(next || null);
+      else refresh();
+    };
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); finish(false, true); }
+      else if (e.key === "Enter" && (!multiline || e.metaKey || e.ctrlKey)) { e.preventDefault(); finish(true, true); }
+    });
+    // Clicking away saves. If the click is still in progress, wait for it to
+    // finish first, so the button under it gets the click before the screen redraws.
+    input.addEventListener("blur", () => {
+      if (!pointerDown) { finish(true, false); return; }
+      const later = () => {
+        window.removeEventListener("pointerup", later, true);
+        window.removeEventListener("pointercancel", later, true);
+        setTimeout(() => finish(true, false), 30);
+      };
+      window.addEventListener("pointerup", later, true);
+      window.addEventListener("pointercancel", later, true);
+    });
+    show.replaceWith(input);
+    input.focus();
+    if (!multiline && type !== "date") input.select();
+  }
+  return show;
+}
+
+// One line that adds a record: type, press Enter, keep typing.
+export function quickAdd(id, placeholder, onAdd) {
+  const input = h("input", { id, placeholder, autocomplete: "off", "aria-label": placeholder });
+  input.addEventListener("keydown", (e) => {
+    const text = input.value.trim();
+    if (e.key !== "Enter" || !text) return;
+    e.preventDefault();
+    input.value = "";
+    onAdd(text);
+  });
+  return h("div", { class: "quickadd" }, h("span", { "aria-hidden": "true" }, "+"), input);
+}
 
 // ---------- drawer ----------
 const layer = () => document.getElementById("layer");
@@ -150,14 +222,17 @@ export function openDrawer(render) {
 export function paintDrawer(force) {
   if (!drawer) return;
   const a = document.activeElement;
+  const inside = a && drawer.panelEl.contains(a);
   // Don't wipe something a teammate is typing when a change arrives from elsewhere.
-  if (!force && a && drawer.panelEl.contains(a) && /INPUT|TEXTAREA/.test(a.tagName) && a.value) return;
+  if (!force && inside && /INPUT|TEXTAREA/.test(a.tagName) && (a.value || a.dataset.editing)) return;
+  const keep = inside && a.id ? a.id : null;
   const scroll = drawer.panelEl.querySelector(".drawer__body")?.scrollTop || 0;
   const parts = drawer.render();
   if (!parts) { closeDrawer(); return; }
   drawer.panelEl.replaceChildren(...parts);
   const body = drawer.panelEl.querySelector(".drawer__body");
   if (body) body.scrollTop = scroll;
+  if (keep) document.getElementById(keep)?.focus();
 }
 export function closeDrawer() {
   if (!drawer) return;

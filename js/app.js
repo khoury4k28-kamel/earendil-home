@@ -58,8 +58,10 @@ const palette = () => ready && openPalette([["About Earendil", home.openAbout]])
 
 function render() {
   if (!ready) return;
-  // Keep the cursor where it was if the screen redraws while someone is typing.
   const a = document.activeElement;
+  // A field being edited in place stays put; the screen catches up when it closes.
+  if (a && a.dataset?.editing && app.contains(a)) return;
+  // Keep the cursor where it was if the screen redraws while someone is typing.
   const keep = a && a.id && app.contains(a) ? { id: a.id, start: a.selectionStart, end: a.selectionEnd } : null;
   const tab = route();
   document.title = tab.id === "home" ? "Earendil Home" : `${tab.label} · Earendil Home`;

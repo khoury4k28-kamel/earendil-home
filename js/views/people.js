@@ -1,7 +1,7 @@
 // People: one card per team member, with what they are working on now.
 
-import { h, avatar, emptyState, plural } from "../ui.js";
-import { state, sortByName, teamName, dealsForPerson, tasksForPerson } from "../store.js";
+import { h, avatar, plural, quickAdd } from "../ui.js";
+import { state, create, sortByName, teamName, dealsForPerson, tasksForPerson } from "../store.js";
 import { editRecord, openPerson } from "../detail.js";
 
 function card(p) {
@@ -23,6 +23,6 @@ export function render() {
       h("button", { class: "btn btn--primary", type: "button", onclick: () => editRecord("people", null) }, "Add person")),
     people.length
       ? h("div", { class: "cards" }, people.map(card))
-      : emptyState("Nobody here yet.", "", null),
+      : h("div", { class: "sec" }, quickAdd("new-person", "Name the first team member", (name) => create("people", { name }))),
     h("div", { class: "small muted" }, h("span", { class: "sq sq--open" }), "Slack, email and Granola aren't connected yet. Updates are typed in by hand."));
 }
