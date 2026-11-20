@@ -27,7 +27,7 @@ function card(d, big) {
   const meta = [d.kind, d.pages && plural(d.pages, "page"), fmtDate(d.date), size(d.size)].filter(Boolean).join(" · ");
   return h("article", { class: "doc" + (big ? " doc--big" : "") },
     h("a", { class: "doc__thumb", href: url(d.file), target: "_blank", rel: "noopener", "aria-label": "Open " + d.title },
-      h("img", { src: url(d.thumb), alt: "", loading: "lazy", width: d.w, height: d.h }),
+      h("img", { src: url(d.thumb), alt: "", width: d.w, height: d.h }),   // loaded at once: there are few, and they are small
       d.kind === "Video" && h("span", { class: "doc__play", "aria-hidden": "true" }, "▶"),
       d.archive && h("span", { class: "doc__badge" }, "Earlier version")),
     h("div", { class: "doc__body" },
@@ -51,7 +51,7 @@ export function render() {
   const pool = showOlder || q ? all : current;
   const shown = pool.filter((d) => (cat === "all" || d.category === cat) && (!q || [d.title, d.category, d.note, d.kind].join(" ").toLowerCase().includes(q)))
     .sort((a, b) => Number(a.archive) - Number(b.archive) || String(b.date).localeCompare(String(a.date)));
-  const latest = all.filter((d) => d.latest);
+  const latest = all.filter((d) => d.top).sort((a, b) => a.top - b.top);   // the row at the top, in the order set in the vault
   const older = all.length - current.length;
   const count = (c) => pool.filter((d) => c === "all" || d.category === c).length;
   const line = [plural(current.length, "document"), ...cats.slice(0, 3).map((c) => `${current.filter((d) => d.category === c).length} ${c.toLowerCase()}`),
