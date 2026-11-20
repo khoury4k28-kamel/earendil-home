@@ -6,7 +6,14 @@ import { TABLES } from "./store.js";
 const EMPTY = { settings: {}, people: [], teams: [], goals: [], milestones: [], tasks: [], deals: [], contacts: [], activity: [] };
 
 // Local preview: reads the private seed file. Nothing is saved.
-export async function previewBackend(seedUrl) {
+async function optional(url) {
+  try {
+    const res = await fetch(url, { cache: "no-store" });
+    return res.ok ? await res.json() : null;
+  } catch { return null; }
+}
+
+export async function previewBackend(seedUrl, { documents, radar } = {}) {
   let seed = EMPTY;
   let seedMissing = false;
   try {
@@ -17,6 +24,11 @@ export async function previewBackend(seedUrl) {
     console.warn(err);
     seedMissing = true;
   }
+  // Documents and the radar are read-only extras; the hub works without them.
+  const docs = documents ? await optional(documents) : null;
+  if (docs) seed = { ...seed, documents: docs.documents || [], documentsUpdated: docs.updated || null, documentsBase: documents.replace(/[^/]*$/, "") };
+  const news = radar ? await optional(radar) : null;
+  if (news) seed = { ...seed, radar: news };
   return {
     mode: "preview",
     seedMissing,

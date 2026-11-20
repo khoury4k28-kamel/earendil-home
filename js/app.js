@@ -12,6 +12,7 @@ import * as people from "./views/people.js";
 import * as teams from "./views/teams.js";
 import * as deals from "./views/deals.js";
 import * as crm from "./views/crm.js";
+import * as docs from "./views/docs.js";
 
 // Home comes first and is where the hub opens. Deal Tracker sits under CRM.
 const TABS = [
@@ -20,6 +21,7 @@ const TABS = [
   { id: "teams", label: "Teams", view: teams, count: () => state.teams.length },
   { id: "crm", label: "CRM", view: crm, count: () => state.contacts.length + state.people.length },
   { id: "deals", label: "Deal Tracker", view: deals, count: () => state.deals.filter(isOpenDeal).length },
+  { id: "docs", label: "Documents", view: docs, count: () => state.documents.filter((d) => !d.archive).length },
 ];
 
 const app = document.getElementById("app");
@@ -184,7 +186,7 @@ async function boot() {
   const wantsPreview = new URLSearchParams(location.search).has("preview");
 
   if (local && (!configured || wantsPreview)) {
-    const backend = await previewBackend(config.previewSeed);
+    const backend = await previewBackend(config.previewSeed, { documents: config.previewDocuments, radar: config.previewRadar });
     notice = backend.seedMissing ? ["Preview", "The local seed file wasn't found, so every section is empty."] : null;
     await init(backend);
     ready = true;

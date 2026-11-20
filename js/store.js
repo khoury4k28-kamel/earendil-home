@@ -10,6 +10,8 @@ export const state = {
   me: { id: null, email: null, name: null, label: "" },
   settings: {},
   people: [], teams: [], goals: [], milestones: [], tasks: [], deals: [], contacts: [], activity: [],
+  documents: [], documentsBase: "", documentsUpdated: null,   // decks and materials (read-only here)
+  radar: null,                                                 // { updated, items }: the week's headlines
 };
 
 let backend = null;
@@ -41,6 +43,10 @@ export async function init(b) {
   state.mode = b.mode;
   state.settings = data.settings || {};
   for (const t of TABLES) state[t] = data[t] || [];
+  state.documents = data.documents || [];
+  state.documentsBase = data.documentsBase || "";
+  state.documentsUpdated = data.documentsUpdated || null;
+  state.radar = data.radar || null;
   state.me = { id: null, email: b.me.email, name: null, label: "", fallback: b.me.label };
   b.onChange(applyRemote);
   emit();

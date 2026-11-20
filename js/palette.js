@@ -18,12 +18,13 @@ function items(extra) {
     ["New milestone", () => editRecord("milestones", null, { status: "upcoming", kind: "company" })],
     ["New target", () => editRecord("goals", null, {})],
   ].map(([label, run]) => ({ group: "Create", label, sub: "", run }));
-  const go = [["Home", "home"], ["People", "people"], ["Teams", "teams"], ["CRM", "crm"], ["CRM map", "crm/map"], ["CRM list", "crm/list"], ["Deal Tracker", "deals"]]
+  const go = [["Home", "home"], ["People", "people"], ["Teams", "teams"], ["CRM", "crm"], ["CRM map", "crm/map"], ["CRM list", "crm/list"], ["Deal Tracker", "deals"], ["Documents", "docs"]]
     .map(([label, id]) => ({ group: "Go to", label, sub: "", run: () => { location.hash = id; } }));
   const records = [
     ...state.deals.map((d) => ({ group: "Deals", label: d.name, sub: [stageLabel(d.stage), d.organisation].filter(Boolean).join(" · "), run: () => openDeal(d.id) })),
     ...state.contacts.map((c) => ({ group: "Contacts", label: c.name, sub: [categoryLabel(c.category), c.organisation !== c.name && c.organisation].filter(Boolean).join(" · "), run: () => openContact(c.id) })),
     ...state.people.map((p) => ({ group: "People", label: p.name, sub: p.title || "", run: () => openPerson(p.id) })),
+    ...state.documents.map((d) => ({ group: "Documents", label: d.title, sub: [d.category, d.kind].join(" · "), run: () => window.open(state.documentsBase + d.file, "_blank", "noopener") })),
   ];
   return { create: [...create, ...extra.map(([label, run]) => ({ group: "Go to", label, sub: "", run }))], go, records };
 }

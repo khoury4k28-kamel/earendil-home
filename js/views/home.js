@@ -5,6 +5,8 @@
 //   3. What changed while I was out -> Since your last visit
 //   4. What is coming?              -> Coming up
 //   5. Who is on what, and where?   -> Team
+// Down the right side runs the Radar: the week's outside news that bears on
+// the business, with the viewer's own markets first.
 // "Mine" means: a to-do I own, a deal I own or am on. Things that belong to a
 // teammate are on their Home, not mine. Things nobody owns are "Up for grabs".
 // Missing details (no contact date, no country, nothing set up) are not tasks.
@@ -21,7 +23,7 @@ import {
   logContact, takeDeal, finishTask, clearToConfirm,
 } from "../detail.js";
 import { stageLabel } from "../schema.js";
-import { findCountry, personPlace } from "../places.js";
+import { findCountry, findCountries, personPlace } from "../places.js";
 
 let showAll = false;
 let moreDates = false;
@@ -29,6 +31,8 @@ let scope = null;        // "mine" | "all"; null = decide from who is signed in
 let openTidy = null;     // which "Tidy up" row is open
 let tidyAll = false;
 let grabsAll = false;
+let radarAll = false;
+const RADAR_LIMIT = 6;
 const TASK_LIMIT = 5;
 const SNOOZE_DAYS = 7;
 
@@ -457,6 +461,32 @@ function yourUpdate() {
     inlineEdit({ id: "my-focus", value: me.focus, placeholder: "Say what you're working on", label: "What you're working on", onSave: (v) => update("people", me.id, { focus: v }) }));
 }
 
+// ---------- radar: outside news, down the right side ----------
+// Headlines come from publishers' own feeds, gathered into the vault by its
+// build-radar script. Only the headline, publisher and date are shown; the
+// link goes to the publisher.
+function radar() {
+  const feed = state.radar;
+  if (!feed || !(feed.items || []).length) return null;
+  // The countries of my deals: news about them comes first.
+  const mine = new Set(state.deals.filter((d) => isOpenDeal(d) && onDeal(d)).flatMap((d) =>
+    [...findCountries(d.region), ...(d.contact_ids || []).map((id) => findCountry(byId("contacts", id)?.country))].filter(Boolean).map((c) => c.code)));
+  const hits = (it) => (it.regions || []).some((r) => mine.has(r));
+  const items = feed.items.map((it, i) => ({ ...it, i })).sort((a, b) => Number(hits(b)) - Number(hits(a)) || a.i - b.i);
+  const shown = radarAll ? items : items.slice(0, RADAR_LIMIT);
+  const stale = Date.now() - new Date(feed.updated).getTime() > 36 * 3600e3;
+  return h("aside", { class: "radar", "aria-label": "Radar" },
+    h("div", { class: "sec__head" }, h("h2", { class: "sec__title" }, "Radar"),
+      h("span", { class: "days" + (stale ? " red" : ""), title: "When the headlines were last gathered" }, "Updated " + ago(feed.updated))),
+    h("ol", null, shown.map((it, n) => h("li", { class: "nrow" },
+      h("span", { class: "rrow__n num", "aria-hidden": "true" }, String(n + 1).padStart(2, "0")),
+      h("a", { class: "nrow__main", href: it.url, target: "_blank", rel: "noopener noreferrer" },
+        h("div", { class: "nrow__topic" }, dots([it.topic, hits(it) && "your market"])),
+        h("div", { class: "nrow__title" }, it.title),
+        h("div", { class: "arow__text" }, dots([it.source, ago(it.at)])))))),
+    moreBtn(items.length - shown.length, radarAll, () => { radarAll = !radarAll; refresh(); }));
+}
+
 function greeting() {
   const hour = new Date().getHours();
   const part = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
@@ -477,10 +507,13 @@ export function render() {
   const rest = all.filter((it) => !picked.has(it.key) && it.type !== "date");
   const hiddenCount = Object.keys(snoozed()).length;
   const mission = state.settings.mission;
-  return h("main", { class: "page page--home" },
-    h("div", { class: "page-head__text" }, h("h1", { class: "h1" }, greeting()), pulse(), yourUpdate()),
-    claim(),
-    today(top), tasks(rest, hiddenCount), myDeals(), upForGrabs(rest), changes(), goals(),
-    comingUp(new Set(top.filter((it) => it.type === "date").map((it) => it.id))), team(), tidy(),
-    h("button", { class: "missionline", type: "button", onclick: openAbout, title: "Mission, values and what we sell" }, (mission || "Write the mission") + " →"));
+  const news = radar();
+  return h("main", { class: "page page--home" + (news ? " page--rail" : "") },
+    h("div", { class: "home__head page-head__text" }, h("h1", { class: "h1" }, greeting()), pulse(), yourUpdate()),
+    h("div", { class: "home__main" },
+      claim(),
+      today(top), tasks(rest, hiddenCount), myDeals(), upForGrabs(rest), changes(), goals(),
+      comingUp(new Set(top.filter((it) => it.type === "date").map((it) => it.id))), team(), tidy(),
+      h("button", { class: "missionline", type: "button", onclick: openAbout, title: "Mission, values and what we sell" }, (mission || "Write the mission") + " →")),
+    news);
 }

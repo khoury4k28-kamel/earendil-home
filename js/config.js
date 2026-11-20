@@ -11,6 +11,9 @@ export const config = {
   // set above (or the address ends in ?preview), the hub reads this private
   // seed file instead of the database. Changes made in preview are not saved.
   previewSeed: "../vault/_admin/seed.json",
+  // The same, for the Documents tab and the news radar: private files in the vault.
+  previewDocuments: "../vault/Documents/index.json",
+  previewRadar: "../vault/Radar/radar.json",
 
   // Supabase client library, version 2.118.0, taken from the official npm
   // package and served from this site, so no outside server is trusted for code.
