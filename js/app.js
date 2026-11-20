@@ -13,13 +13,13 @@ import * as teams from "./views/teams.js";
 import * as deals from "./views/deals.js";
 import * as crm from "./views/crm.js";
 
-// Home comes first and is where the hub opens.
+// Home comes first and is where the hub opens. Deal Tracker sits under CRM.
 const TABS = [
   { id: "home", label: "Home", view: home },
   { id: "people", label: "People", view: people, count: () => state.people.length },
   { id: "teams", label: "Teams", view: teams, count: () => state.teams.length },
-  { id: "deals", label: "Deal Tracker", view: deals, count: () => state.deals.filter(isOpenDeal).length },
   { id: "crm", label: "CRM", view: crm, count: () => state.contacts.length + state.people.length },
+  { id: "deals", label: "Deal Tracker", view: deals, count: () => state.deals.filter(isOpenDeal).length },
 ];
 
 const app = document.getElementById("app");
