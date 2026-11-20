@@ -465,6 +465,16 @@ function yourUpdate() {
 // Headlines come from publishers' own feeds, gathered into the vault by its
 // build-radar script. Only the headline, publisher and date are shown; the
 // link goes to the publisher.
+// The article's own preview picture, as a small thumbnail. A publisher that
+// offers none gets a plain tile with its initial.
+function newsPicture(it) {
+  const tile = () => h("span", { class: "nrow__thumb nrow__thumb--none", "aria-hidden": "true" }, (it.source || "?").trim()[0].toUpperCase());
+  if (!it.thumb) return tile();
+  const img = h("img", { class: "nrow__thumb", src: state.radarBase + it.thumb, alt: "", width: "76", height: "76" });
+  img.addEventListener("error", () => img.replaceWith(tile()));
+  return img;
+}
+
 function radar() {
   const feed = state.radar;
   if (!feed || !(feed.items || []).length) return null;
@@ -479,11 +489,12 @@ function radar() {
     h("div", { class: "sec__head" }, h("h2", { class: "sec__title" }, "Radar"),
       h("span", { class: "days" + (stale ? " red" : ""), title: "When the headlines were last gathered" }, "Updated " + ago(feed.updated))),
     h("ol", null, shown.map((it, n) => h("li", { class: "nrow" },
-      h("span", { class: "rrow__n num", "aria-hidden": "true" }, String(n + 1).padStart(2, "0")),
-      h("a", { class: "nrow__main", href: it.url, target: "_blank", rel: "noopener noreferrer" },
-        h("div", { class: "nrow__topic" }, dots([it.topic, hits(it) && "your market"])),
-        h("div", { class: "nrow__title" }, it.title),
-        h("div", { class: "arow__text" }, dots([it.source, ago(it.at)])))))),
+      h("a", { class: "nrow__link", href: it.url, target: "_blank", rel: "noopener noreferrer" },
+        newsPicture(it),
+        h("div", { class: "nrow__main" },
+          h("div", { class: "nrow__topic" }, dots([h("span", { class: "num" }, String(n + 1).padStart(2, "0")), it.topic, hits(it) && "your market"])),
+          h("div", { class: "nrow__title" }, it.title),
+          h("div", { class: "arow__text" }, dots([it.source, ago(it.at)]))))))),
     moreBtn(items.length - shown.length, radarAll, () => { radarAll = !radarAll; refresh(); }));
 }
 

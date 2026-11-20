@@ -28,7 +28,7 @@ export async function previewBackend(seedUrl, { documents, radar } = {}) {
   const docs = documents ? await optional(documents) : null;
   if (docs) seed = { ...seed, documents: docs.documents || [], documentsUpdated: docs.updated || null, documentsBase: documents.replace(/[^/]*$/, "") };
   const news = radar ? await optional(radar) : null;
-  if (news) seed = { ...seed, radar: news };
+  if (news) seed = { ...seed, radar: news, radarBase: radar.replace(/[^/]*$/, "") };
   return {
     mode: "preview",
     seedMissing,

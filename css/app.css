@@ -645,3 +645,12 @@ button.tidy__title:hover { text-decoration: underline; text-underline-offset: 3p
 .doc__pin[aria-pressed="true"] { background: var(--ink); }
 .doc__pin[aria-pressed="true"] svg { fill: #fff; stroke: #fff; }
 @media (hover: none) { .doc__pin { opacity: 1; } }
+
+/* ---------- radar with pictures ---------- */
+.nrow { padding: 13px 0; }
+.nrow__link { display: flex; gap: 14px; align-items: flex-start; text-decoration: none; min-width: 0; flex: 1; }
+.nrow__thumb { flex: none; width: 76px; height: 76px; border-radius: 10px; object-fit: cover; background: var(--soft-2); }
+.nrow__thumb--none { display: grid; place-items: center; font-size: 22px; font-weight: 600; color: var(--faint); }
+.nrow__link:hover .nrow__title { text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--line-2); }
+.nrow__link:hover .nrow__thumb { filter: brightness(0.94); }
+.nrow__topic .num { color: var(--faint); }

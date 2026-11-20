@@ -11,7 +11,7 @@ export const state = {
   settings: {},
   people: [], teams: [], goals: [], milestones: [], tasks: [], deals: [], contacts: [], activity: [],
   documents: [], documentsBase: "", documentsUpdated: null,   // decks and materials (read-only here)
-  radar: null,                                                 // { updated, items }: the week's headlines
+  radar: null, radarBase: "",                                  // { updated, items }: the week's headlines, and where their pictures are
 };
 
 let backend = null;
@@ -47,6 +47,7 @@ export async function init(b) {
   state.documentsBase = data.documentsBase || "";
   state.documentsUpdated = data.documentsUpdated || null;
   state.radar = data.radar || null;
+  state.radarBase = data.radarBase || "";
   state.me = { id: null, email: b.me.email, name: null, label: "", fallback: b.me.label };
   b.onChange(applyRemote);
   emit();
