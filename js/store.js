@@ -15,7 +15,25 @@ export const state = {
 let backend = null;
 const listeners = new Set();
 export function subscribe(fn) { listeners.add(fn); }
-function emit() { for (const fn of listeners) fn(); }
+function emit() { whoAmI(); for (const fn of listeners) fn(); }
+
+// Who is looking at the hub. Signed in: the person whose profile carries the
+// sign-in email. In local preview nobody is signed in, so a person can be
+// picked to see the hub as they would ("view as").
+let viewAs = null;
+try { viewAs = localStorage.getItem("preview-as") || null; } catch { /* storage may be blocked */ }
+function whoAmI() {
+  const email = (state.me.email || "").toLowerCase();
+  let person = email ? state.people.find((p) => (p.email || "").toLowerCase() === email) : null;
+  if (!person && state.mode === "preview" && viewAs) person = state.people.find((p) => p.id === viewAs) || null;
+  state.me = { ...state.me, id: person ? person.id : null, name: person ? person.name : null, label: person ? person.name : state.me.email || state.me.fallback || "" };
+}
+export function setViewAs(id) {
+  viewAs = id || null;
+  try { viewAs ? localStorage.setItem("preview-as", viewAs) : localStorage.removeItem("preview-as"); } catch { /* ignore */ }
+  emit();
+}
+export const viewingAs = () => (state.mode === "preview" ? viewAs : null);
 
 export async function init(b) {
   backend = b;
@@ -23,9 +41,7 @@ export async function init(b) {
   state.mode = b.mode;
   state.settings = data.settings || {};
   for (const t of TABLES) state[t] = data[t] || [];
-  const email = (b.me.email || "").toLowerCase();
-  const person = email && state.people.find((p) => (p.email || "").toLowerCase() === email);
-  state.me = { id: person ? person.id : null, email: b.me.email, name: person ? person.name : null, label: person ? person.name : b.me.email || b.me.label };
+  state.me = { id: null, email: b.me.email, name: null, label: "", fallback: b.me.label };
   b.onChange(applyRemote);
   emit();
 }

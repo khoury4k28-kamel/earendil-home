@@ -578,3 +578,16 @@ button.tidy__title:hover { text-decoration: underline; text-underline-offset: 3p
   .rrow .arow__main { flex: 1 1 calc(100% - 46px); }
   .rrow > .btn { margin-left: 38px; }
 }
+
+/* ---------- a personal home ---------- */
+.side__preview { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
+.side__preview .pick { margin: 0 -6px; font-size: 14px; max-width: calc(100% + 12px); }
+.claim { padding: 16px 18px; background: var(--soft); border-radius: var(--r-m); display: flex; flex-direction: column; gap: 12px; }
+.claim b { font-weight: 600; }
+.youron { display: flex; gap: 10px; align-items: baseline; font-size: 16px; min-width: 0; }
+.youron > .muted { flex: none; }
+.youron .input { min-width: min(420px, 60vw); }
+.drow__dot { margin-right: 0; align-self: center; }
+@media (max-width: 860px) {
+  .side__preview { flex-direction: row; align-items: center; }
+}

@@ -1,21 +1,24 @@
-// Home answers, in order, what people open a home page to find out:
+// Home is personal: each person sees their own. It answers, in order, what
+// people open a home page to find out:
 //   1. What matters today?          -> Today: the three things that most need a person
 //   2. What should I do next?       -> Tasks: to-dos and deal follow-ups, mine first
 //   3. What changed while I was out -> Since your last visit
 //   4. What is coming?              -> Coming up
 //   5. Who is on what, and where?   -> Team
-// Missing details (no owner, no country, nothing set up) are not tasks. They
-// sit at the foot under "Tidy up" and are fixed in place.
+// "Mine" means: a to-do I own, a deal I own or am on. Things that belong to a
+// teammate are on their Home, not mine. Things nobody owns are "Up for grabs".
+// Missing details (no contact date, no country, nothing set up) are not tasks.
+// They sit at the foot under "Tidy up" and are fixed in place.
 
 import {
   h, avatar, fmtDate, parseDate, todayISO, todayLabel, daysSince, ago, plural, refresh, toast, quickAdd, inlineEdit,
   openDrawer, drawerFrame, block, kv,
 } from "../ui.js";
-import { state, saveSetting, isOpenDeal, create, update, byId, personName } from "../store.js";
+import { state, saveSetting, isOpenDeal, create, update, byId, personName, setViewAs } from "../store.js";
 import { openForm } from "../form.js";
 import {
   editRecord, openDeal, openPerson, openContact, dealIssues, stalledDays, pickPerson,
-  logContact, finishTask, clearToConfirm,
+  logContact, takeDeal, finishTask, clearToConfirm,
 } from "../detail.js";
 import { stageLabel } from "../schema.js";
 import { findCountry, personPlace } from "../places.js";
@@ -25,6 +28,7 @@ let moreDates = false;
 let scope = null;        // "mine" | "all"; null = decide from who is signed in
 let openTidy = null;     // which "Tidy up" row is open
 let tidyAll = false;
+let grabsAll = false;
 const TASK_LIMIT = 5;
 const SNOOZE_DAYS = 7;
 
@@ -135,25 +139,31 @@ function snooze(key) {
   toast(`Hidden for ${SNOOZE_DAYS} days on this device.`, ["Undo", () => setSnoozed(before)]);
 }
 
+// ---------- whose page this is ----------
+const meId = () => state.me.id;
+const onDeal = (d) => Boolean(meId() && (d.owner_id === meId() || (d.people_ids || []).includes(meId())));
+// "mine", "theirs" (a teammate's) or "open" (nobody's yet)
+const dealBelongs = (d) => (onDeal(d) ? "mine" : personName(d.owner_id) ? "theirs" : "open");
+const taskBelongs = (t) => (meId() && t.owner_id === meId() ? "mine" : personName(t.owner_id) ? "theirs" : "open");
+
 // ---------- everything that could need a person, each with a score ----------
-// Higher scores are more pressing. "Today" takes the top three.
+// Higher scores are more pressing. What is mine counts for more; a teammate's
+// work is theirs to see first.
 function workItems() {
   const today = todayISO();
-  const me = state.me.id;
   const items = [];
   for (const t of state.tasks) {
     if (t.status === "done") continue;
     const overdue = Boolean(t.due && t.due < today);
     const left = t.due && !overdue ? -daysSince(t.due) : null;
     const soon = left != null && left <= 7;
-    const mine = Boolean(me && t.owner_id === me);
-    if (!(t.company_wide || mine || overdue || soon)) continue;
+    const belongs = taskBelongs(t);
     const edit = () => editRecord("tasks", t);
     items.push({
-      key: "task:" + t.id, type: "task", mine, title: t.title, open: edit, tick: () => finishTask(t),
-      score: overdue ? 100 + Math.min(30, daysSince(t.due)) : soon ? 70 - left : mine ? 60 : 50,
-      action: personName(t.owner_id) ? ["Done", () => finishTask(t)] : ["Assign", edit],
-      meta: [personName(t.owner_id), overdue ? red(`Overdue since ${fmtDate(t.due)}`) : t.due && `Due ${fmtDate(t.due)}`,
+      key: "task:" + t.id, type: "task", belongs, title: t.title, open: edit, tick: () => finishTask(t),
+      score: overdue ? 100 + Math.min(30, daysSince(t.due)) : soon ? 70 - left : 55,
+      action: belongs === "open" ? (meId() ? ["Take it", () => takeTask(t)] : ["Assign", edit]) : ["Done", () => finishTask(t)],
+      meta: [belongs !== "mine" && personName(t.owner_id), overdue ? red(`Overdue since ${fmtDate(t.due)}`) : t.due && `Due ${fmtDate(t.due)}`,
         t.status === "doing" && "In progress", byId("deals", t.deal_id)?.name],
     });
   }
@@ -161,8 +171,9 @@ function workItems() {
     if (!isOpenDeal(d)) continue;
     const quiet = stalledDays(d);
     if (!quiet && d.next_step) continue;
-    const base = { type: "deal", mine: Boolean(me && d.owner_id === me), open: () => openDeal(d.id) };
-    const about = [d.organisation !== d.name && d.organisation, stageLabel(d.stage), personName(d.owner_id)];
+    const belongs = dealBelongs(d);
+    const base = { type: "deal", belongs, open: () => openDeal(d.id) };
+    const about = [d.organisation !== d.name && d.organisation, stageLabel(d.stage), belongs !== "mine" && personName(d.owner_id)];
     if (quiet) {
       items.push({ ...base, key: `deal:${d.id}:stalled`, score: 90 + Math.min(9, quiet / 10), title: `Follow up on ${d.name}`,
         tick: () => logContact("deals", d), action: ["Log contact", () => logContact("deals", d)], meta: [red(`No contact in ${quiet} days`), ...about] });
@@ -175,21 +186,48 @@ function workItems() {
     if (m.team_id || m.status === "done" || !parseDate(m.date)) continue;
     const left = -daysSince(m.date);
     if (left < 0 || left > 60) continue;
-    items.push({ key: "date:" + m.id, type: "date", id: m.id, title: m.title, open: () => editRecord("milestones", m),
+    items.push({ key: "date:" + m.id, type: "date", belongs: "all", id: m.id, title: m.title, open: () => editRecord("milestones", m),
       score: left <= 1 ? 98 : left <= 14 ? 85 - left : 40 - left / 10,
       meta: [m.date_label || fmtDate(m.date), left <= 14 ? red(inDays(left)) : inDays(left)] });
   }
   const hidden = snoozed();
+  for (const it of items) if (meId() && it.belongs === "mine") it.score += 25;
   return items.filter((it) => !hidden[it.key]).sort((a, b) => b.score - a.score || a.title.localeCompare(b.title));
 }
-// The three most pressing, with no more than two of one kind.
+function takeTask(t) {
+  const before = t.owner_id || null;
+  update("tasks", t.id, { owner_id: meId() });
+  toast("It's yours.", ["Undo", () => update("tasks", t.id, { owner_id: before })]);
+}
+// The three most pressing for this person, with no more than two of one kind.
+// A teammate's work is left for their own page.
 function topThree(items) {
   const picked = [];
   for (const it of items) {
     if (picked.length === 3) break;
+    if (meId() && it.belongs === "theirs") continue;
     if (picked.filter((p) => p.type === it.type).length < 2) picked.push(it);
   }
   return picked;
+}
+
+// ---------- who are you? ----------
+// Until the hub knows who is looking, Home can't be personal. Signed in: pick
+// your name once and your profile gets your sign-in email. Preview: pick anyone.
+function claim() {
+  if (meId() || !state.people.length) return null;
+  const live = state.mode === "live";
+  if (live && !state.me.email) return null;
+  const pick = (p) => {
+    if (!live) { setViewAs(p.id); return; }
+    const before = p.email || null;
+    update("people", p.id, { email: state.me.email });
+    toast(`This is now ${p.name}'s Home.`, ["Undo", () => update("people", p.id, { email: before })]);
+  };
+  return h("div", { class: "claim" },
+    h("div", null, h("b", null, "Home is personal."), live ? " Which of these is you?" : " Pick someone to see theirs."),
+    h("div", { class: "chips" }, [...state.people].sort((a, b) => a.name.localeCompare(b.name)).map((p) =>
+      h("button", { class: "person-chip", type: "button", onclick: () => pick(p) }, avatar(p.name, "s"), p.name))));
 }
 
 // ---------- 1. today ----------
@@ -204,27 +242,65 @@ function today(top) {
 }
 
 // ---------- 2. tasks ----------
+function taskRows(items) {
+  return h("ul", null, items.map((it) => h("li", { class: "arow trow" },
+    h("button", { class: "check", type: "button", role: "checkbox", "aria-checked": "false", "aria-label": "Done: " + it.title, onclick: it.tick }),
+    h("button", { class: "arow__main", type: "button", onclick: it.open },
+      h("div", { class: "arow__title" }, it.title), h("div", { class: "arow__text" }, dots(it.meta))),
+    it.action && it.action[0] !== "Done" && h("button", { class: "btn", type: "button", onclick: it.action[1] }, it.action[0]),
+    h("button", { class: "quiet", type: "button", "aria-label": "Snooze: " + it.title, onclick: () => snooze(it.key) }, "Snooze"))));
+}
 function tasks(rest, snoozedCount) {
-  const me = state.me.id;
-  const mineCount = rest.filter((it) => it.mine).length;
-  const which = scope || (me && mineCount ? "mine" : "all");
-  const items = which === "mine" ? rest.filter((it) => it.mine) : rest;
+  const mine = rest.filter((it) => it.belongs === "mine");
+  const which = meId() ? scope || "mine" : "all";
+  const items = which === "mine" ? mine : rest;
   const shown = showAll ? items : items.slice(0, TASK_LIMIT);
-  const toggle = me && h("div", { class: "seg seg--small", role: "group", "aria-label": "Whose tasks" },
-    h("button", { type: "button", "aria-pressed": String(which === "mine"), onclick: () => { scope = "mine"; refresh(); } }, `Mine ${mineCount}`),
+  const toggle = meId() && h("div", { class: "seg seg--small", role: "group", "aria-label": "Whose tasks" },
+    h("button", { type: "button", "aria-pressed": String(which === "mine"), onclick: () => { scope = "mine"; refresh(); } }, `Mine ${mine.length}`),
     h("button", { type: "button", "aria-pressed": String(which === "all"), onclick: () => { scope = "all"; refresh(); } }, `Everyone ${rest.length}`));
-  return section(`Tasks · ${items.length}`,
+  return section(`${which === "mine" ? "Your tasks" : "Tasks"} · ${items.length}`,
     h("div", { class: "actions" },
       snoozedCount > 0 && h("button", { class: "more more--head", type: "button", onclick: () => setSnoozed({}) }, `${snoozedCount} snoozed · Show`),
       toggle),
-    h("ul", null, shown.map((it) => h("li", { class: "arow trow" },
-      h("button", { class: "check", type: "button", role: "checkbox", "aria-checked": "false", "aria-label": "Done: " + it.title, onclick: it.tick }),
-      h("button", { class: "arow__main", type: "button", onclick: it.open },
-        h("div", { class: "arow__title" }, it.title), h("div", { class: "arow__text" }, dots(it.meta))),
-      it.action && it.action[0] !== "Done" && h("button", { class: "btn", type: "button", onclick: it.action[1] }, it.action[0]),
-      h("button", { class: "quiet", type: "button", "aria-label": "Snooze: " + it.title, onclick: () => snooze(it.key) }, "Snooze")))),
+    shown.length > 0 && taskRows(shown),
     moreBtn(items.length - shown.length, showAll, () => { showAll = !showAll; refresh(); }),
-    quickAdd("quick-todo", "Add a to-do", (title) => create("tasks", { title, status: "todo", company_wide: true, owner_id: state.me.id || null })));
+    // A to-do added here is yours. With nobody signed in it is the company's.
+    quickAdd("quick-todo", "Add a to-do", (title) => create("tasks", { title, status: "todo", company_wide: !meId(), owner_id: meId() || null })));
+}
+
+// ---------- your deals ----------
+function myDeals() {
+  if (!meId()) return null;
+  const deals = state.deals.filter((d) => isOpenDeal(d) && onDeal(d)).sort((a, b) => a.name.localeCompare(b.name));
+  if (!deals.length) return null;
+  return section(`Your deals · ${deals.length}`, h("a", { class: "link small", href: "#deals" }, "All deals"),
+    h("ul", null, deals.map((d) => {
+      const quiet = stalledDays(d);
+      const days = d.last_touch ? daysSince(d.last_touch) : null;
+      return h("li", { class: "arow" },
+        h("span", { class: "dot drow__dot c-" + (d.stage || "lead"), title: stageLabel(d.stage) }),
+        h("button", { class: "arow__main", type: "button", onclick: () => openDeal(d.id) },
+          h("div", { class: "arow__title" }, d.name),
+          h("div", { class: "arow__text" }, d.next_step || "No next step")),
+        quiet ? h("span", { class: "stalled" }, `${quiet}d`) : days != null && h("span", { class: "days", title: "Since the last contact" }, days <= 0 ? "today" : `${days}d`));
+    })));
+}
+
+// ---------- up for grabs: work nobody owns yet ----------
+function upForGrabs(rest) {
+  if (!meId()) return null;
+  const rows = [
+    ...rest.filter((it) => it.type === "task" && it.belongs === "open").map((it) => ({ title: it.title, text: "To-do", open: it.open, take: it.action[1] })),
+    ...state.deals.filter((d) => isOpenDeal(d) && !personName(d.owner_id) && !onDeal(d)).sort((a, b) => a.name.localeCompare(b.name))
+      .map((d) => ({ title: d.name, text: ["Deal", stageLabel(d.stage), d.organisation !== d.name && d.organisation].filter(Boolean).join(" · "), open: () => openDeal(d.id), take: () => takeDeal(d) })),
+  ];
+  if (!rows.length) return null;
+  const shown = grabsAll ? rows : rows.slice(0, 4);
+  return section(`Up for grabs · ${rows.length}`, null,
+    h("ul", null, shown.map((r) => h("li", { class: "arow" },
+      h("button", { class: "arow__main", type: "button", onclick: r.open }, h("div", { class: "arow__title" }, r.title), h("div", { class: "arow__text" }, r.text)),
+      smallBtn("Take it", r.take)))),
+    moreBtn(rows.length - shown.length, grabsAll, () => { grabsAll = !grabsAll; refresh(); }));
 }
 
 // ---------- 3. since your last visit ----------
@@ -244,6 +320,7 @@ function changes() {
   const myEmail = (state.me.email || "").toLowerCase();
   const who = (email) => state.people.find((p) => (p.email || "").toLowerCase() === String(email || "").toLowerCase())?.name || String(email || "").split("@")[0];
   const kinds = { deal: ["deals", openDeal], person: ["people", openPerson], contact: ["contacts", openContact] };
+  const isMine = (type, rec) => (type === "deal" ? onDeal(rec) : type === "task" ? rec.owner_id === meId() : type === "contact" ? rec.owner_id === meId() : false) && Boolean(meId());
   const rows = [];
   const seen = new Set();
   for (const a of state.activity) {
@@ -253,7 +330,7 @@ function changes() {
     if ((a.author_email || "").toLowerCase() === myEmail && myEmail) continue;
     if (!a.author_email && a.author === state.me.label) continue;
     seen.add(a.entity_type + ":" + a.entity_id);
-    rows.push({ at: a.created_at, title: rec.name, text: a.body, by: a.author, open: () => kind[1](rec.id) });
+    rows.push({ at: a.created_at, mine: isMine(a.entity_type, rec), title: rec.name, text: a.body, by: a.author, open: () => kind[1](rec.id) });
   }
   const tables = [["deals", "deal", (r) => openDeal(r.id), "Deal"], ["contacts", "contact", (r) => openContact(r.id), "Contact"],
     ["tasks", "task", (r) => editRecord("tasks", r), "Task"], ["milestones", "date", (r) => editRecord("milestones", r), "Date"]];
@@ -261,14 +338,15 @@ function changes() {
     if (!r.updated_at || String(r.updated_at) <= from || seen.has(type + ":" + r.id)) continue;
     if (myEmail && (r.updated_by || "").toLowerCase() === myEmail) continue;
     const added = r.created_at && Math.abs(new Date(r.updated_at) - new Date(r.created_at)) < 5000;
-    rows.push({ at: r.updated_at, title: r.name || r.title, text: `${noun} ${added ? "added" : "updated"}`, by: who(r.updated_by), open: () => open(r) });
+    rows.push({ at: r.updated_at, mine: isMine(type, r), title: r.name || r.title, text: `${noun} ${added ? "added" : "updated"}`, by: who(r.updated_by), open: () => open(r) });
   }
   if (!rows.length) return null;
-  rows.sort((a, b) => String(b.at).localeCompare(String(a.at)));
+  // Changes to what is yours come first, then the newest.
+  rows.sort((a, b) => Number(b.mine) - Number(a.mine) || String(b.at).localeCompare(String(a.at)));
   return section(`Since your last visit · ${rows.length}`, h("span", { class: "days" }, ago(from)),
     h("ul", null, rows.slice(0, 8).map((r) => h("li", { class: "arow" },
       h("button", { class: "arow__main", type: "button", onclick: r.open },
-        h("div", { class: "arow__title" }, r.title), h("div", { class: "arow__text" }, r.text)),
+        h("div", { class: "arow__title" }, r.title), h("div", { class: "arow__text" }, dots([r.mine && "Yours", r.text]))),
       h("span", { class: "days" }, [r.by, ago(r.at)].filter(Boolean).join(" · "))))));
 }
 
@@ -285,11 +363,12 @@ function comingUp(skip) {
     moreDates && done.length > 0 && h("details", { class: "past" }, h("summary", null, `${done.length} done`), milestoneRows(done)));
 }
 
-// ---------- 5. team ----------
+// ---------- 5. team: everyone else ----------
 function team() {
-  if (!state.people.length) return null;
+  const others = state.people.filter((p) => p.id !== meId()).sort((a, b) => a.name.localeCompare(b.name));
+  if (!others.length) return null;
   return section("Team", h("a", { class: "link small", href: "#people" }, "All"),
-    h("ul", null, [...state.people].sort((a, b) => a.name.localeCompare(b.name)).map((p) => {
+    h("ul", null, others.map((p) => {
       const place = personPlace(p);
       return h("li", { class: "arow" },
         avatar(p.name, "s"),
@@ -301,22 +380,28 @@ function team() {
 }
 
 // ---------- tidy up: missing details, fixed in place ----------
+// Signed in, this is about your own records and the ones nobody owns. A
+// teammate's gaps are on their page.
 function tidy() {
+  const me = meId();
+  const mineOrOpen = (owner) => !me || owner === me || !personName(owner);
   const open = state.deals.filter(isOpenDeal);
+  const myDealsOrAll = open.filter((d) => (me ? onDeal(d) : true));
   const line = (rec, onName, control) => h("li", { class: "arow" },
     h("button", { class: "arow__main", type: "button", onclick: onName }, h("div", { class: "arow__title" }, rec.name)), control);
-  const noOwner = open.filter((d) => !personName(d.owner_id));
-  const noTouch = open.filter((d) => !d.last_touch);
-  const toConfirm = open.filter((d) => d.to_confirm);
-  const noCountry = state.contacts.filter((c) => !findCountry(c.country));
-  const noFocus = state.people.filter((p) => !p.focus);
-  const noEmail = state.people.filter((p) => !p.email);
+  const noOwner = me ? [] : open.filter((d) => !personName(d.owner_id));       // signed in: these are "Up for grabs"
+  const noTouch = myDealsOrAll.filter((d) => !d.last_touch);
+  const toConfirm = myDealsOrAll.filter((d) => d.to_confirm);
+  const noCountry = state.contacts.filter((c) => !findCountry(c.country) && mineOrOpen(c.owner_id));
+  const noFocus = me ? [] : state.people.filter((p) => !p.focus);              // signed in: your own is the line under the greeting
+  const noEmail = state.people.filter((p) => !p.email && (!me || p.id === me));
+  const yours = me ? "of your " : "";
   const rows = [
     noOwner.length && { key: "owner", title: `${plural(noOwner.length, "deal has", "deals have")} no owner`,
       body: () => noOwner.map((d) => line(d, () => openDeal(d.id), pickPerson({ value: d.owner_id, blank: "Choose owner", label: `Owner of ${d.name}`, onChange: (v) => update("deals", d.id, { owner_id: v }) }))) },
-    noTouch.length && { key: "touch", title: `${plural(noTouch.length, "deal has", "deals have")} no contact date`,
+    noTouch.length && { key: "touch", title: `${noTouch.length} ${yours}${noTouch.length === 1 ? "deal has" : "deals have"} no contact date`,
       body: () => noTouch.map((d) => line(d, () => openDeal(d.id), inlineEdit({ id: `tidy-touch-${d.id}`, value: "", placeholder: "Add date", label: `Last contact on ${d.name}`, type: "date", onSave: (v) => update("deals", d.id, { last_touch: v }) }))) },
-    toConfirm.length && { key: "confirm", title: `${plural(toConfirm.length, "deal has", "deals have")} details to confirm`,
+    toConfirm.length && { key: "confirm", title: `${toConfirm.length} ${yours}${toConfirm.length === 1 ? "deal has" : "deals have"} details to confirm`,
       body: () => toConfirm.map((d) => h("li", { class: "arow" },
         h("button", { class: "arow__main", type: "button", onclick: () => openDeal(d.id) }, h("div", { class: "arow__title" }, d.name), h("div", { class: "arow__text" }, d.to_confirm)),
         smallBtn("Confirmed", () => clearToConfirm(d)))) },
@@ -324,7 +409,7 @@ function tidy() {
       body: () => noCountry.map((c) => line(c, () => openContact(c.id), inlineEdit({ id: `tidy-country-${c.id}`, value: c.country, placeholder: "Add country", label: `Country of ${c.name}`, onSave: (v) => update("contacts", c.id, { country: v }) }))) },
     noFocus.length && { key: "focus", title: `${plural(noFocus.length, "person has", "people have")} no update on what they're working on`,
       body: () => noFocus.map((p) => line(p, () => openPerson(p.id), inlineEdit({ id: `tidy-focus-${p.id}`, value: "", placeholder: "Add update", label: `What ${p.name} is working on`, onSave: (v) => update("people", p.id, { focus: v }) }))) },
-    noEmail.length && { key: "email", title: `${plural(noEmail.length, "person has", "people have")} no email, so the hub can't greet them by name`,
+    noEmail.length && { key: "email", title: me ? "Your profile has no email, so signing in won't open this page as you" : `${plural(noEmail.length, "person has", "people have")} no email, so the hub can't greet them by name`,
       body: () => noEmail.map((p) => line(p, () => openPerson(p.id), inlineEdit({ id: `tidy-email-${p.id}`, value: "", placeholder: "Add email", label: `Email of ${p.name}`, type: "email", onSave: (v) => update("people", p.id, { email: v }) }))) },
     !state.goals.some((g) => !g.team_id) && { key: "targets", title: "No company targets yet", go: ["Set targets", () => editRecord("goals", null, {})] },
     !(state.settings.values || []).length && { key: "values", title: "The values aren't written yet", go: ["Write them", editCompany] },
@@ -347,19 +432,29 @@ function tidy() {
     moreBtn(rows.length - shown.length, tidyAll, () => { tidyAll = !tidyAll; refresh(); }));
 }
 
-// ---------- the line under the greeting: the state of things, in a sentence ----------
+// ---------- the lines under the greeting ----------
+// The state of things in a sentence: your own deals if you have any, else the company's.
 function pulse() {
   const open = state.deals.filter(isOpenDeal);
-  const quiet = open.filter((d) => stalledDays(d) != null).length;
+  const mine = open.filter(onDeal);
+  const set = mine.length ? mine : open;
+  const quiet = set.filter((d) => stalledDays(d) != null).length;
   const next = state.milestones.filter((m) => !m.team_id && m.status !== "done" && parseDate(m.date) && -daysSince(m.date) >= 0)
     .sort((a, b) => a.date.localeCompare(b.date))[0];
   const left = next ? -daysSince(next.date) : null;
   return h("div", { class: "pulse" }, dots([
     todayLabel(),
-    open.length > 0 && h("a", { href: "#deals" }, plural(open.length, "open deal")),
+    set.length > 0 && h("a", { href: "#deals" }, mine.length ? `${plural(mine.length, "open deal")} of yours` : plural(open.length, "open deal")),
     quiet > 0 && h("a", { href: "#deals", class: "red" }, `${quiet} gone quiet`),
     next && h("button", { type: "button", onclick: () => editRecord("milestones", next) }, left === 0 ? `${next.title} is today` : `${plural(left, "day")} to ${next.title}`),
   ]));
+}
+// What you are working on, in your own words. The team sees it on People and on their Home.
+function yourUpdate() {
+  const me = byId("people", meId());
+  if (!me) return null;
+  return h("div", { class: "youron" }, h("span", { class: "muted" }, "You're on"),
+    inlineEdit({ id: "my-focus", value: me.focus, placeholder: "Say what you're working on", label: "What you're working on", onSave: (v) => update("people", me.id, { focus: v }) }));
 }
 
 function greeting() {
@@ -367,6 +462,12 @@ function greeting() {
   const part = hour < 12 ? "Good morning" : hour < 18 ? "Good afternoon" : "Good evening";
   const first = (state.me.name || "").split(" ")[0];
   return (first ? `${part}, ${first}` : part) + ".";
+}
+
+function goals() {
+  const list = state.goals.filter((g) => !g.team_id);
+  if (!list.length) return null;
+  return section("Targets", smallBtn("Add", () => editRecord("goals", null, {})), goalsList(list));
 }
 
 export function render() {
@@ -377,14 +478,9 @@ export function render() {
   const hiddenCount = Object.keys(snoozed()).length;
   const mission = state.settings.mission;
   return h("main", { class: "page page--home" },
-    h("div", { class: "page-head__text" }, h("h1", { class: "h1" }, greeting()), pulse()),
-    today(top), tasks(rest, hiddenCount), changes(), goals(),
+    h("div", { class: "page-head__text" }, h("h1", { class: "h1" }, greeting()), pulse(), yourUpdate()),
+    claim(),
+    today(top), tasks(rest, hiddenCount), myDeals(), upForGrabs(rest), changes(), goals(),
     comingUp(new Set(top.filter((it) => it.type === "date").map((it) => it.id))), team(), tidy(),
     h("button", { class: "missionline", type: "button", onclick: openAbout, title: "Mission, values and what we sell" }, (mission || "Write the mission") + " →"));
-}
-
-function goals() {
-  const list = state.goals.filter((g) => !g.team_id);
-  if (!list.length) return null;
-  return section("Targets", smallBtn("Add", () => editRecord("goals", null, {})), goalsList(list));
 }

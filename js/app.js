@@ -4,7 +4,7 @@
 import { config } from "./config.js";
 import { h, setRerender, paintDrawer, closeDrawer, openDialog, toast } from "./ui.js";
 import { openPalette } from "./palette.js";
-import { state, init, subscribe, isOpenDeal, recordPresence } from "./store.js";
+import { state, init, subscribe, isOpenDeal, recordPresence, setViewAs, viewingAs, sortByName } from "./store.js";
 import { deviceZone } from "./places.js";
 import { previewBackend, supabaseClient, supabaseBackend } from "./backends.js";
 import * as home from "./views/home.js";
@@ -48,10 +48,23 @@ function shell(tab, sub) {
         state.mode === "live"
           ? h("button", { class: "side__account", type: "button", onclick: accountDialog },
               h("span", { class: "side__who" }, state.me.name || state.me.email || "Account"), h("span", { class: "muted small" }, "Account"))
-          : h("span", { class: "tag tag--solid", title: "Showing the local seed file. Changes aren't saved." }, "Preview · not saved"))),
+          : h("div", { class: "side__preview" },
+              viewAsPicker(),
+              h("span", { class: "tag tag--solid", title: "Showing the local seed file. Changes aren't saved." }, "Preview · not saved")))),
     h("div", { class: "main" },
       notice && h("div", { class: "notice" }, h("b", null, notice[0]), notice[1]),
       tab.view.render(sub)))];
+}
+
+// Local preview only: see the hub as one of the team would.
+function viewAsPicker() {
+  if (!state.people.length) return null;
+  const current = viewingAs() || "";
+  const sel = h("select", { class: "pick" + (current ? "" : " pick--empty"), id: "view-as", "aria-label": "View the hub as" },
+    h("option", { value: "" }, "View as…"),
+    sortByName(state.people).map((p) => h("option", { value: p.id, selected: p.id === current }, "As " + p.name)));
+  sel.addEventListener("change", () => setViewAs(sel.value));
+  return sel;
 }
 
 const palette = () => ready && openPalette([["About Earendil", home.openAbout]]);
