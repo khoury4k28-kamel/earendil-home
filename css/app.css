@@ -635,3 +635,13 @@ button.tidy__title:hover { text-decoration: underline; text-underline-offset: 3p
   .page--rail { display: flex; flex-direction: column; gap: 46px; max-width: 1010px; }
   .radar { position: static; max-height: none; overflow: visible; }
 }
+
+/* ---------- pins on documents ---------- */
+.doc { position: relative; }
+.doc__pin { position: absolute; z-index: 2; top: 10px; right: 10px; width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; background: rgba(255, 255, 255, 0.94); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.22); opacity: 0; transition: opacity 0.12s, background-color 0.12s, transform 0.12s; }
+.doc__pin svg { fill: none; stroke: var(--ink); stroke-width: 1.7; stroke-linejoin: round; transform: rotate(35deg); }
+.doc:hover .doc__pin, .doc__pin:focus-visible, .doc__pin[aria-pressed="true"] { opacity: 1; }
+.doc__pin:hover { transform: scale(1.08); }
+.doc__pin[aria-pressed="true"] { background: var(--ink); }
+.doc__pin[aria-pressed="true"] svg { fill: #fff; stroke: #fff; }
+@media (hover: none) { .doc__pin { opacity: 1; } }

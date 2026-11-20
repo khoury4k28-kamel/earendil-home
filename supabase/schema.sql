@@ -63,6 +63,8 @@ create table if not exists public.people (
 -- Where each person last opened the hub from: their device's time zone, and when.
 alter table public.people add column if not exists tz text;
 alter table public.people add column if not exists seen_at timestamptz;
+-- The documents this person has pinned (ids from the Documents tab). Theirs alone.
+alter table public.people add column if not exists pinned_docs text[];
 
 create table if not exists public.teams (
   id text primary key default gen_random_uuid()::text,

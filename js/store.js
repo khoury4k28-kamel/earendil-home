@@ -129,6 +129,28 @@ export function addNote(entityType, entityId, body) {
   });
 }
 
+// ---------- pinned documents: each person's own ----------
+// Until someone pins or unpins anything they see the starting three. After
+// that the list is theirs alone. Signed in, it is kept on their profile. In
+// preview (or before the hub knows who is looking) it is kept in this browser,
+// separately for each person viewed.
+const pinKey = () => "pins:" + (state.me.id || "shared");
+const pinsOnProfile = () => state.mode === "live" && Boolean(state.me.id);
+export function pinnedDocs() {
+  let ids = null;
+  if (pinsOnProfile()) ids = byId("people", state.me.id)?.pinned_docs ?? null;
+  else { try { ids = JSON.parse(localStorage.getItem(pinKey()) || "null"); } catch { ids = null; } }
+  if (!Array.isArray(ids)) ids = state.documents.filter((d) => d.top).sort((a, b) => a.top - b.top).map((d) => d.id);
+  return ids.filter((id) => state.documents.some((d) => d.id === id));
+}
+export function togglePin(id) {
+  const now = pinnedDocs();
+  const next = now.includes(id) ? now.filter((x) => x !== id) : [...now, id];
+  if (pinsOnProfile()) return update("people", state.me.id, { pinned_docs: next });
+  try { localStorage.setItem(pinKey(), JSON.stringify(next)); } catch { /* storage may be blocked */ }
+  emit();
+}
+
 // ---------- lookups ----------
 export const byId = (table, id) => (id ? state[table].find((r) => r.id === id) : null) || null;
 export const personName = (id) => byId("people", id)?.name || "";
