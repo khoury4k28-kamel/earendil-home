@@ -650,7 +650,6 @@ button.tidy__title:hover { text-decoration: underline; text-underline-offset: 3p
 .nrow { padding: 13px 0; }
 .nrow__link { display: flex; gap: 14px; align-items: flex-start; text-decoration: none; min-width: 0; flex: 1; }
 .nrow__thumb { flex: none; width: 76px; height: 76px; border-radius: 10px; object-fit: cover; background: var(--soft-2); }
-.nrow__thumb--none { display: grid; place-items: center; font-size: 22px; font-weight: 600; color: var(--faint); }
 .nrow__link:hover .nrow__title { text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--line-2); }
 .nrow__link:hover .nrow__thumb { filter: brightness(0.94); }
 .nrow__topic .num { color: var(--faint); }
@@ -667,3 +666,6 @@ button.tidy__title:hover { text-decoration: underline; text-underline-offset: 3p
   .side__account .muted { display: inline; }
   .side__who { max-width: 44vw; }
 }
+.radar ol { counter-reset: news; }
+.nrow { counter-increment: news; }
+.nrow__n::before { content: counter(news, decimal-leading-zero); }

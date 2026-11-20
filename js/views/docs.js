@@ -39,13 +39,21 @@ function pinButton(d, pinned) {
   }, pinIcon());
 }
 
+// RULE: every document shown has a thumbnail. One without, or whose picture
+// fails to load, is not shown.
+function thumb(d) {
+  const img = h("img", { src: url(d.thumb), alt: "", width: d.w, height: d.h });   // loaded at once: there are few, and they are small
+  img.addEventListener("error", () => img.closest(".doc")?.remove());
+  return img;
+}
+
 function card(d, big, pinned) {
   const [tag, tip] = AUDIENCE[d.audience] || ["", ""];
   const meta = [d.kind, d.pages && plural(d.pages, "page"), fmtDate(d.date), size(d.size)].filter(Boolean).join(" · ");
   return h("article", { class: "doc" + (big ? " doc--big" : "") + (pinned ? " is-pinned" : "") },
     pinButton(d, pinned),
     h("a", { class: "doc__thumb", href: url(d.file), target: "_blank", rel: "noopener", "aria-label": "Open " + d.title },
-      h("img", { src: url(d.thumb), alt: "", width: d.w, height: d.h }),   // loaded at once: there are few, and they are small
+      thumb(d),
       d.kind === "Video" && h("span", { class: "doc__play", "aria-hidden": "true" }, "▶"),
       d.archive && h("span", { class: "doc__badge" }, "Earlier version")),
     h("div", { class: "doc__body" },
@@ -58,7 +66,7 @@ function card(d, big, pinned) {
 }
 
 export function render() {
-  const all = state.documents;
+  const all = state.documents.filter((d) => d.thumb);
   if (!all.length) {
     return h("main", { class: "page" }, h("div", { class: "page-head" }, h("h1", { class: "h1" }, "Documents")),
       h("div", { class: "empty" }, h("div", null, h("b", null, "No documents yet."))));

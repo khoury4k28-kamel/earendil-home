@@ -465,24 +465,24 @@ function yourUpdate() {
 // Headlines come from publishers' own feeds, gathered into the vault by its
 // build-radar script. Only the headline, publisher and date are shown; the
 // link goes to the publisher.
-// The article's own preview picture, as a small thumbnail. A publisher that
-// offers none gets a plain tile with its initial.
+// RULE: every headline shown has a real picture (the article's own, as a small
+// thumbnail). There is no placeholder. A headline with no picture is not shown,
+// and one whose picture fails to load is taken off the list.
 function newsPicture(it) {
-  const tile = () => h("span", { class: "nrow__thumb nrow__thumb--none", "aria-hidden": "true" }, (it.source || "?").trim()[0].toUpperCase());
-  if (!it.thumb) return tile();
   const img = h("img", { class: "nrow__thumb", src: state.radarBase + it.thumb, alt: "", width: "76", height: "76" });
-  img.addEventListener("error", () => img.replaceWith(tile()));
+  img.addEventListener("error", () => img.closest(".nrow")?.remove());
   return img;
 }
 
 function radar() {
   const feed = state.radar;
-  if (!feed || !(feed.items || []).length) return null;
+  if (!feed || !(feed.items || []).some((it) => it.thumb)) return null;
   // The countries of my deals: news about them comes first.
   const mine = new Set(state.deals.filter((d) => isOpenDeal(d) && onDeal(d)).flatMap((d) =>
     [...findCountries(d.region), ...(d.contact_ids || []).map((id) => findCountry(byId("contacts", id)?.country))].filter(Boolean).map((c) => c.code)));
   const hits = (it) => (it.regions || []).some((r) => mine.has(r));
-  const items = feed.items.map((it, i) => ({ ...it, i })).sort((a, b) => Number(hits(b)) - Number(hits(a)) || a.i - b.i);
+  const items = feed.items.filter((it) => it.thumb).map((it, i) => ({ ...it, i })).sort((a, b) => Number(hits(b)) - Number(hits(a)) || a.i - b.i);
+  if (!items.length) return null;
   const shown = radarAll ? items : items.slice(0, RADAR_LIMIT);
   const stale = Date.now() - new Date(feed.updated).getTime() > 36 * 3600e3;
   return h("aside", { class: "radar", "aria-label": "Radar" },
@@ -492,7 +492,7 @@ function radar() {
       h("a", { class: "nrow__link", href: it.url, target: "_blank", rel: "noopener noreferrer" },
         newsPicture(it),
         h("div", { class: "nrow__main" },
-          h("div", { class: "nrow__topic" }, dots([h("span", { class: "num" }, String(n + 1).padStart(2, "0")), it.topic, hits(it) && "your market"])),
+          h("div", { class: "nrow__topic" }, dots([h("span", { class: "num nrow__n" }), it.topic, hits(it) && "your market"])),   // the number is counted by the list itself, so it stays right if a row drops out
           h("div", { class: "nrow__title" }, it.title),
           h("div", { class: "arow__text" }, dots([it.source, ago(it.at)]))))))),
     moreBtn(items.length - shown.length, radarAll, () => { radarAll = !radarAll; refresh(); }));
