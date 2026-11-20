@@ -221,7 +221,7 @@ function topThree(items) {
 function claim() {
   if (meId() || !state.people.length) return null;
   const live = state.mode === "live";
-  if (live && !state.me.email) return null;
+  if (!state.me.email) return null;
   const pick = (p) => {
     if (!live) { setViewAs(p.id); return; }
     const before = p.email || null;
@@ -229,7 +229,7 @@ function claim() {
     toast(`This is now ${p.name}'s Home.`, ["Undo", () => update("people", p.id, { email: before })]);
   };
   return h("div", { class: "claim" },
-    h("div", null, h("b", null, "Home is personal."), live ? " Which of these is you?" : " Pick someone to see theirs."),
+    h("div", null, h("b", null, "Home is personal."), " Which of these is you?"),
     h("div", { class: "chips" }, [...state.people].sort((a, b) => a.name.localeCompare(b.name)).map((p) =>
       h("button", { class: "person-chip", type: "button", onclick: () => pick(p) }, avatar(p.name, "s"), p.name))));
 }

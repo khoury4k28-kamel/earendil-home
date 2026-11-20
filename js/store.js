@@ -24,10 +24,28 @@ function emit() { whoAmI(); for (const fn of listeners) fn(); }
 // picked to see the hub as they would ("view as").
 let viewAs = null;
 try { viewAs = localStorage.getItem("preview-as") || null; } catch { /* storage may be blocked */ }
+// "kam@…", "kam.khoury@…", "kkhoury@…" all point at Kam Khoury, as long as only
+// one person on the team fits. It saves typing an email onto every profile.
+function guessByName(email) {
+  const local = email.split("@")[0].toLowerCase().replace(/[^a-z.]/g, "");
+  if (!local) return null;
+  const hits = state.people.filter((p) => {
+    const parts = String(p.name || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").split(/\s+/).filter(Boolean);
+    const f = parts[0] || "", l = parts.length > 1 ? parts[parts.length - 1] : "";
+    return [f, l, `${f}.${l}`, `${f}${l}`, `${f[0]}${l}`, `${f[0]}.${l}`, `${f}${l[0] || ""}`, `${f}.${l[0] || ""}`].filter((x) => x && x !== ".").includes(local);
+  });
+  return hits.length === 1 ? hits[0] : null;
+}
+// The person behind a sign-in address: by the email on their profile, else by name.
+export function personForEmail(email) {
+  const e = String(email || "").toLowerCase();
+  return e ? state.people.find((p) => (p.email || "").toLowerCase() === e) || guessByName(e) : null;
+}
 function whoAmI() {
   const email = (state.me.email || "").toLowerCase();
-  let person = email ? state.people.find((p) => (p.email || "").toLowerCase() === email) : null;
-  if (!person && state.mode === "preview" && viewAs) person = state.people.find((p) => p.id === viewAs) || null;
+  // In preview, "view as" wins, so anyone's page can be checked.
+  let person = state.mode === "preview" && viewAs ? state.people.find((p) => p.id === viewAs) || null : null;
+  if (!person && email) person = personForEmail(email);
   state.me = { ...state.me, id: person ? person.id : null, name: person ? person.name : null, label: person ? person.name : state.me.email || state.me.fallback || "" };
 }
 export function setViewAs(id) {

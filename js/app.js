@@ -2,9 +2,9 @@
 // sign-in, draws the sidebar, and shows the section for the address.
 
 import { config } from "./config.js";
-import { h, setRerender, paintDrawer, closeDrawer, openDialog, toast } from "./ui.js";
+import { h, setRerender, paintDrawer, closeDrawer, openDialog } from "./ui.js";
 import { openPalette } from "./palette.js";
-import { state, init, subscribe, isOpenDeal, recordPresence, setViewAs, viewingAs, sortByName } from "./store.js";
+import { state, init, subscribe, isOpenDeal, recordPresence, setViewAs, viewingAs, sortByName, personForEmail } from "./store.js";
 import { deviceZone } from "./places.js";
 import { previewBackend, supabaseClient, supabaseBackend } from "./backends.js";
 import * as home from "./views/home.js";
@@ -47,15 +47,23 @@ function shell(tab, sub) {
         h("a", { class: "tab", href: "#" + t.id, "aria-current": t === tab ? "page" : null },
           h("span", null, t.label), t.count && h("span", { class: "tab__n num" }, t.count()))))),
       h("div", { class: "side__foot" },
-        state.mode === "live"
-          ? h("button", { class: "side__account", type: "button", onclick: accountDialog },
-              h("span", { class: "side__who" }, state.me.name || state.me.email || "Account"), h("span", { class: "muted small" }, "Account"))
-          : h("div", { class: "side__preview" },
-              viewAsPicker(),
-              h("span", { class: "tag tag--solid", title: "Showing the local seed file. Changes aren't saved." }, "Preview · not saved")))),
+        state.mode === "preview" && h("div", { class: "side__preview" },
+          viewAsPicker(),
+          h("span", { class: "tag tag--solid", title: "Showing the local seed file. Changes aren't saved." }, "Preview · not saved")),
+        // Who is signed in. Press it to sign out.
+        h("button", { class: "side__account", type: "button", id: "account", onclick: accountDialog, title: state.me.email || null },
+          h("span", { class: "muted small" }, "Signed in as"),
+          h("span", { class: "side__who" }, signedInName())))),
     h("div", { class: "main" },
       notice && h("div", { class: "notice" }, h("b", null, notice[0]), notice[1]),
       tab.view.render(sub)))];
+}
+
+// The name shown at the bottom left: the person behind the sign-in address
+// (not whoever is being "viewed as"), or the address itself if nobody matches.
+function signedInName() {
+  if (!state.me.email) return "Nobody";
+  return personForEmail(state.me.email)?.name || state.me.email;
 }
 
 // Local preview only: see the hub as one of the team would.
@@ -91,26 +99,34 @@ function render() {
 }
 
 // ---------- sign-in ----------
-function gate({ connected, message, signedInAs }) {
+// One screen for both cases. Live: the database checks the email and password.
+// Preview on this Mac: the email must be a team address and the password is
+// checked against the team password's hash in a private local file.
+const SESSION = "hub-session";
+const teamEmail = (email) => email.toLowerCase().endsWith("@" + config.emailDomain);
+function readSession() {
+  try { const s = JSON.parse(localStorage.getItem(SESSION) || "null"); return s && s.email ? s : null; } catch { return null; }
+}
+
+function gate({ connected, message, signedInAs, signIn, note }) {
   const error = h("div", { class: "form-error", hidden: !message }, message || "");
-  const email = h("input", { class: "input", id: "gate-email", type: "email", autocomplete: "username", required: true });
+  const email = h("input", { class: "input", id: "gate-email", type: "email", autocomplete: "username", required: true, placeholder: "name@" + config.emailDomain });
   const password = h("input", { class: "input", id: "gate-password", type: "password", autocomplete: "current-password", required: true });
   const button = h("button", { class: "btn btn--primary", type: "submit" }, "Sign in");
   const form = h("form", { class: "block" },
-    h("div", { class: "field" }, h("label", { class: "field__label", for: "gate-email" }, "Email"), email),
-    h("div", { class: "field" }, h("label", { class: "field__label", for: "gate-password" }, "Password"), password),
-    button);
+    h("div", { class: "field" }, h("label", { class: "field__label", for: "gate-email" }, "Earendil email"), email),
+    h("div", { class: "field" }, h("label", { class: "field__label", for: "gate-password" }, "Team password"), password),
+    button,
+    note && h("div", { class: "field__hint" }, note));
+  const fail = (text) => { error.textContent = text; error.hidden = false; };
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
+    const address = email.value.trim();
+    if (!teamEmail(address)) { fail(`Use your Earendil email (name@${config.emailDomain}).`); email.focus(); return; }
     button.disabled = true;
-    const { data, error: err } = await client.auth.signInWithPassword({ email: email.value.trim(), password: password.value });
+    const problem = await signIn(address, password.value);
     button.disabled = false;
-    if (err || !data?.user) {
-      error.textContent = "That email and password don't match an account. Check them, or ask a hub admin to set you up.";
-      error.hidden = false;
-      return;
-    }
-    start(data.user);
+    if (problem) { fail(problem); password.select(); }
   });
 
   app.replaceChildren(h("div", { class: "gate" }, h("div", { class: "gate__box" },
@@ -123,32 +139,60 @@ function gate({ connected, message, signedInAs }) {
       signedInAs && h("div", { class: "block" },
         h("div", null, "Signed in as ", h("b", null, signedInAs), "."),
         h("button", { class: "btn", type: "button", onclick: signOut }, "Sign out"))))));
+  if (connected && !signedInAs) email.focus();
+}
+
+// Live: the database decides.
+async function liveSignIn(address, password) {
+  const { data, error: err } = await client.auth.signInWithPassword({ email: address, password });
+  if (err || !data?.user) return "That email and password don't match. Check them, or ask a hub admin to set you up.";
+  start(data.user);
+  return null;
+}
+
+// Preview: compare with the team password's hash (PBKDF2), kept in the vault on this Mac.
+async function teamPassword() {
+  try {
+    const res = await fetch(config.previewLogin, { cache: "no-store" });
+    const spec = res.ok ? await res.json() : null;
+    return spec && spec.hash && spec.salt && spec.iterations ? spec : null;
+  } catch { return null; }
+}
+async function matches(password, spec) {
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(password), "PBKDF2", false, ["deriveBits"]);
+  const salt = Uint8Array.from(spec.salt.match(/../g).map((x) => parseInt(x, 16)));
+  const bits = await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt, iterations: spec.iterations }, key, 256);
+  return [...new Uint8Array(bits)].map((x) => x.toString(16).padStart(2, "0")).join("") === spec.hash;
+}
+async function previewGate() {
+  const spec = await teamPassword();
+  gate({
+    connected: true,
+    note: spec ? null : "No team password is set yet, so any password works on this Mac.",
+    signIn: async (address, password) => {
+      if (spec && !(await matches(password, spec))) return "That password isn't right.";
+      try { localStorage.setItem(SESSION, JSON.stringify({ email: address, at: new Date().toISOString() })); } catch { /* storage may be blocked */ }
+      await startPreview(address);
+      return null;
+    },
+  });
 }
 
 async function signOut() {
-  await client.auth.signOut();
+  if (client) await client.auth.signOut();
+  try { localStorage.removeItem(SESSION); } catch { /* ignore */ }
+  setViewAs(null);
   location.reload();
 }
 
 function accountDialog() {
-  const pw = h("input", { class: "input", id: "new-password", type: "password", autocomplete: "new-password", placeholder: "At least 10 characters" });
-  const msg = h("div", { class: "field__hint" }, "Choose a new password if you were given a temporary one.");
-  const save = h("button", { class: "btn", type: "button" }, "Change password");
-  save.addEventListener("click", async () => {
-    if (pw.value.length < 10) { msg.textContent = "Use at least 10 characters."; return; }
-    save.disabled = true;
-    const { error } = await client.auth.updateUser({ password: pw.value });
-    save.disabled = false;
-    if (error) { msg.textContent = "That didn't work: " + error.message; return; }
-    close();
-    toast("Password changed.");
-  });
-  const close = openDialog({
+  openDialog({
     title: "Your account",
     body: h("div", { class: "block" },
-      h("div", null, "Signed in as ", h("b", null, state.me.email), "."),
-      h("div", { class: "field" }, h("label", { class: "field__label", for: "new-password" }, "New password"), pw, msg)),
-    foot: [h("button", { class: "btn btn--quiet", type: "button", onclick: signOut }, "Sign out"), save],
+      h("div", null, "Signed in as ", h("b", null, signedInName()), "."),
+      personForEmail(state.me.email) ? h("div", { class: "muted" }, state.me.email)
+        : h("div", { class: "muted small" }, "This address isn't matched to anyone on People yet. Home will ask which one is you.")),
+    foot: [h("span"), h("button", { class: "btn", type: "button", onclick: signOut }, "Sign out")],
   });
 }
 
@@ -173,6 +217,16 @@ async function start(user) {
   recordPresence(deviceZone());
 }
 
+async function startPreview(email) {
+  app.replaceChildren(h("p", { class: "boot" }, "Loading Earendil Home…"));
+  const backend = await previewBackend(config.previewSeed, { documents: config.previewDocuments, radar: config.previewRadar });
+  backend.me.email = email;
+  notice = backend.seedMissing ? ["Preview", "The local seed file wasn't found, so every section is empty."] : null;
+  await init(backend);
+  ready = true;
+  render();
+}
+
 async function boot() {
   subscribe(() => { render(); paintDrawer(); });
   setRerender(render);
@@ -186,11 +240,9 @@ async function boot() {
   const wantsPreview = new URLSearchParams(location.search).has("preview");
 
   if (local && (!configured || wantsPreview)) {
-    const backend = await previewBackend(config.previewSeed, { documents: config.previewDocuments, radar: config.previewRadar });
-    notice = backend.seedMissing ? ["Preview", "The local seed file wasn't found, so every section is empty."] : null;
-    await init(backend);
-    ready = true;
-    render();
+    const session = readSession();
+    if (session && teamEmail(session.email)) await startPreview(session.email);
+    else await previewGate();
     return;
   }
   if (!configured) { gate({ connected: false }); return; }
@@ -204,7 +256,7 @@ async function boot() {
   }
   const { data } = await client.auth.getSession();
   if (data?.session?.user) start(data.session.user);
-  else gate({ connected: true });
+  else gate({ connected: true, signIn: liveSignIn });
 }
 
 boot();

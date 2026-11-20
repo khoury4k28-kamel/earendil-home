@@ -7,6 +7,13 @@ export const config = {
   supabaseUrl: "",
   supabaseKey: "",
 
+  // Sign-in is for the team's own addresses only.
+  emailDomain: "earendil.io",
+
+  // Local preview only: the team password, as a salted hash in a private file
+  // that never leaves this Mac. Set it with vault/_admin/set-team-password.py.
+  previewLogin: "../vault/_admin/login.json",
+
   // Local preview only. When the page is opened on localhost and no project is
   // set above (or the address ends in ?preview), the hub reads this private
   // seed file instead of the database. Changes made in preview are not saved.

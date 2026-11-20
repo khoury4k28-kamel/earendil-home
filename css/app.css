@@ -654,3 +654,16 @@ button.tidy__title:hover { text-decoration: underline; text-underline-offset: 3p
 .nrow__link:hover .nrow__title { text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--line-2); }
 .nrow__link:hover .nrow__thumb { filter: brightness(0.94); }
 .nrow__topic .num { color: var(--faint); }
+
+/* ---------- signed in as ---------- */
+.side__foot { display: flex; flex-direction: column; gap: 12px; }
+.side__account { text-align: left; gap: 1px; }
+.side__account .muted { font-size: 12px; }
+@media (max-width: 860px) {
+  .side__foot { flex-direction: row; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; max-width: 100%; min-width: 0; }
+  .side__preview { flex-wrap: wrap; min-width: 0; }
+  .side__preview .pick { max-width: 34vw; }
+  .side__account { flex-direction: row; align-items: baseline; gap: 6px; max-width: 100%; }
+  .side__account .muted { display: inline; }
+  .side__who { max-width: 44vw; }
+}
