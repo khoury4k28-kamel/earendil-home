@@ -24,8 +24,9 @@ function emit() { whoAmI(); for (const fn of listeners) fn(); }
 // picked to see the hub as they would ("view as").
 let viewAs = null;
 try { viewAs = localStorage.getItem("preview-as") || null; } catch { /* storage may be blocked */ }
-// "kam@…", "kam.khoury@…", "kkhoury@…" all point at Kam Khoury, as long as only
-// one person on the team fits. It saves typing an email onto every profile.
+// A first name, "first.last" or "flast" before the @ points at that person, as
+// long as only one person on the team fits. It saves typing an email onto
+// every profile.
 function guessByName(email) {
   const local = email.split("@")[0].toLowerCase().replace(/[^a-z.]/g, "");
   if (!local) return null;
