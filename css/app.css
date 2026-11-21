@@ -329,6 +329,9 @@ td input[type="checkbox"], th input[type="checkbox"] { width: 16px; height: 16px
 .gate__title { font-size: 24px; font-weight: 700; letter-spacing: -0.03em; line-height: 1.15; }
 .gate__body { display: flex; flex-direction: column; gap: 16px; }
 .gate__body form .btn { margin-top: 4px; padding: 11px 14px; }
+/* The words sit inside the boxes; the labels stay for screen readers and password managers. */
+.gate .field { position: relative; }
+.gate .field__label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
 #toast { display: flex; align-items: center; gap: 16px; position: fixed; left: 50%; bottom: 26px; transform: translateX(-50%); z-index: 80; background: var(--ink); color: #fff; padding: 10px 16px; font-weight: 500; font-size: 14px; border-radius: 10px; max-width: calc(100vw - 32px); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2); }
 #toast:empty { display: none; }
