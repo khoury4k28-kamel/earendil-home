@@ -8,21 +8,33 @@ import {
 import { zonePlace, timeIn, countryList } from "./places.js";
 import {
   state, byId, create, update, remove, addNote, personName, teamName, sortByName,
-  dealsForPerson, dealsForContact, tasksForPerson, tasksForProject, projectsForPerson, projectsForDeal, notesFor, isOpenDeal,
+  dealsForPerson, dealsForContact, tasksForPerson, projectsForDeal, notesFor, isOpenDeal,
 } from "./store.js";
+import { workOf, tasksOf, progress, nextStep, taskOrder, workFor, isLive, toDeal } from "./work.js";
 import { openForm } from "./form.js";
 import { fieldsFor, NOUN, STAGES, stageLabel, categoryLabel, PROJECT_STATUS, projectStatusLabel } from "./schema.js";
 
 // ---------- add / edit any record ----------
 export function editRecord(table, record, defaults = {}, added) {
   const noun = NOUN[table];
-  const base = record || defaults;
+  let base = record || defaults;
+  // A task belongs to one deal, one project, or nothing: one choice on the form.
+  let clean = (values) => values;
+  if (table === "tasks") {
+    const w = workOf(base);
+    base = { ...base, belongs: w ? `${w.kind}:${w.id}` : "" };
+    clean = ({ belongs, ...values }) => {
+      const [kind, id] = String(belongs || "").split(/:(.*)/s);
+      return { ...values, deal_id: kind === "deal" ? id : null, project_id: kind === "project" ? id : null };
+    };
+  }
   openForm({
     title: record ? `Edit ${noun}` : `Add ${noun}`,
     fields: fieldsFor(table, base),
     record: base,
     saveLabel: record ? "Save" : `Add ${noun}`,
-    onSave: async (values) => {
+    onSave: async (raw) => {
+      const values = clean(raw);
       if (record) return update(table, record.id, values);
       const row = await create(table, { ...defaults, ...values });
       if (row && added) added(row);
@@ -87,7 +99,7 @@ export function dealIssues(deal) {
   const stalled = stalledDays(deal);
   if (stalled) out.push({ key: "stalled", rank: 0, text: `No contact in ${stalled} days` });
   if (!deal.owner_id || !byId("people", deal.owner_id)) out.push({ key: "owner", rank: 1, text: "No owner" });
-  if (!deal.next_step) out.push({ key: "next", rank: 2, text: "No next step" });
+  if (!nextStep(deal)) out.push({ key: "next", rank: 2, text: "No next step" });
   if (!deal.last_touch) out.push({ key: "touch", rank: 3, text: "No contact logged" });
   if (deal.to_confirm) out.push({ key: "confirm", rank: 4, text: "Details to confirm" });
   return out;
@@ -112,17 +124,17 @@ export async function setStage(id, stage, { undo = false } = {}) {
   }]);
 }
 
-export function taskList(tasks, { showOwner = true, showProject = true } = {}) {
+// Tasks in the order they should be done. `showWork` names the deal or project
+// each belongs to; `markNext` labels the first open one.
+export function taskList(tasks, { showOwner = true, showWork = true, markNext = false } = {}) {
   if (!tasks.length) return null;
-  const order = { doing: 0, todo: 1, done: 2 };
-  const sorted = [...tasks].sort((a, b) => order[a.status] - order[b.status] || String(a.due || "9").localeCompare(String(b.due || "9")));
-  return h("ul", { class: "rows" }, sorted.map((t) => {
+  const sorted = [...tasks].sort(taskOrder);
+  return h("ul", { class: "rows" }, sorted.map((t, i) => {
     const meta = [
       showOwner && personName(t.owner_id),
       t.status === "doing" && "In progress",
       t.due && "Due " + fmtDate(t.due),
-      t.deal_id && byId("deals", t.deal_id)?.name,
-      showProject && byId("projects", t.project_id)?.name,
+      showWork && workOf(t)?.name,
     ].filter(Boolean).join(" · ");
     return h("li", { class: "row" + (t.status === "done" ? " done" : "") },
       h("button", {
@@ -132,7 +144,7 @@ export function taskList(tasks, { showOwner = true, showProject = true } = {}) {
         onclick: () => update("tasks", t.id, { status: t.status === "done" ? "todo" : "done" }),
       }),
       h("button", { class: "row__main rowbtn", type: "button", onclick: () => editRecord("tasks", t) },
-        h("div", { class: "row__title" }, t.title),
+        h("div", { class: "row__title" }, markNext && i === 0 && t.status !== "done" && h("span", { class: "next" }, "Next"), t.title),
         meta && h("div", { class: "row__meta" }, meta)));
   }));
 }
@@ -169,61 +181,73 @@ function dealRows(deals) {
       h("div", { class: "row__meta" }, [stageLabel(d.stage), fmtRange(d.size_low, d.size_high)].filter(Boolean).join(" · "))))));
 }
 
-// ---------- project ----------
-// How far along a project is, and the task to do next.
-export function projectProgress(p) {
-  const tasks = tasksForProject(p.id);
-  const order = { doing: 0, todo: 1 };
-  const open = tasks.filter((t) => t.status !== "done")
-    .sort((a, b) => order[a.status] - order[b.status] || String(a.due || "9").localeCompare(String(b.due || "9")));
-  return { total: tasks.length, done: tasks.length - open.length, next: open[0] || null };
-}
+// ---------- deals and projects: the pieces both share ----------
+export const openWork = (kind, id) => (kind === "deal" ? openDeal(id) : openProject(id));
 export function progressBar(done, total) {
   if (!total) return null;
   return h("span", { class: "bar", role: "img", "aria-label": `${done} of ${total} tasks done` },
     h("span", { style: `width:${Math.round((done / total) * 100)}%` }));
 }
-export function projectRows(projects) {
-  return h("ul", { class: "rows" }, sortByName(projects).map((p) => {
-    const { total, done } = projectProgress(p);
-    return h("li", { class: "row" },
-      h("button", { class: "row__main rowbtn", type: "button", onclick: () => openProject(p.id) },
-        h("div", { class: "row__title" }, p.name),
-        h("div", { class: "row__meta" }, [projectStatusLabel(p.status), total ? `${done} of ${total} tasks done` : "No tasks yet"].join(" · "))));
-  }));
+// The small mark that tells a deal (its stage colour) from a project.
+export const workMark = (w) => (w.kind === "deal"
+  ? h("span", { class: "dot c-" + (w.rec.stage || "lead"), title: "Deal · " + stageLabel(w.rec.stage) })
+  : h("span", { class: "pmark", title: "Project · " + projectStatusLabel(w.rec.status) }));
+// The label a task carries wherever it shows: its deal or project, one click away.
+export function workTag(task) {
+  const w = workOf(task);
+  if (!w) return null;
+  return h("button", { class: "wtag", type: "button", title: (w.kind === "deal" ? "Deal: " : "Project: ") + w.name,
+    onclick: (e) => { e.stopPropagation(); openWork(w.kind, w.id); } }, workMark(w), h("span", null, w.name));
 }
-// A deal that has grown into real work gets a project of its own.
-export async function startProjectFor(deal) {
-  const row = await create("projects", {
-    name: deal.name, status: "active", deal_id: deal.id, owner_id: deal.owner_id || state.me.id || null,
-    people_ids: [...(deal.people_ids || [])], summary: null, due: null,
-  });
-  if (row) openProject(row.id);
+export function workRows(list) {
+  return h("ul", { class: "rows" }, [...list].sort((a, b) => a.name.localeCompare(b.name)).map((w) => h("li", { class: "row" },
+    h("button", { class: "row__main rowbtn", type: "button", onclick: () => openWork(w.kind, w.id) },
+      h("div", { class: "row__title" }, workMark(w), w.name),
+      h("div", { class: "row__meta" }, [
+        w.kind === "deal" ? stageLabel(w.rec.stage) : projectStatusLabel(w.rec.status),
+        w.total ? `${w.done} of ${w.total} tasks done` : "No tasks yet",
+        w.next && `Next: ${w.next.title}`,
+      ].filter(Boolean).join(" · "))))));
+}
+// The head both panels open with: how far along, then the tasks.
+const doneLine = (pr) => (pr.total ? `${pr.done} of ${pr.total} tasks done` : null);
+function workTasks(kind, rec) {
+  const defaults = kind === "deal" ? { deal_id: rec.id, project_id: null } : { project_id: rec.id, deal_id: null };
+  return tasksBlock(tasksOf(kind, rec.id), `task-${kind}-${rec.id}`, { ...defaults, owner_id: state.me.id || rec.owner_id || null }, { showWork: false, markNext: true });
 }
 
+// ---------- project ----------
 export function openProject(id) {
   openDrawer(() => {
     const p = byId("projects", id);
     if (!p) return null;
-    const { total, done } = projectProgress(p);
+    const pr = progress("project", id);
     const deal = byId("deals", p.deal_id);
     const team = (p.people_ids || []).filter((x) => x !== p.owner_id && byId("people", x));
     const save = (key) => (v) => update("projects", id, { [key]: v });
+    // Two clicks, because it can't be taken back with Undo.
+    const sell = h("button", { class: "more", type: "button" }, "Turn into a deal");
+    sell.addEventListener("click", async () => {
+      if (!sell.dataset.armed) { sell.dataset.armed = "1"; sell.textContent = "Click again: its tasks and notes move to a new deal"; return; }
+      const made = await toDeal(p);
+      if (made) { openDeal(made.id); toast(`${made.name} is now a deal.`); }
+    });
     return drawerFrame(
-      { eyebrow: "Project", title: p.name, sub: total ? `${done} of ${total} tasks done` : null, actions: editBtn("projects", p) },
-      progressBar(done, total),
-      h("div", { class: "stage-pick stage-pick--3", role: "group", "aria-label": "Status" }, PROJECT_STATUS.map((s) => h("button", {
-        type: "button", "aria-pressed": String((p.status || "active") === s.value), onclick: () => save("status")(s.value),
-      }, s.label))),
+      { eyebrow: "Project", title: p.name, sub: doneLine(pr), actions: editBtn("projects", p) },
+      progressBar(pr.done, pr.total),
+      h("div", { class: "stage-pick stage-pick--3", role: "group", "aria-label": "Status" }, PROJECT_STATUS.map((st) => h("button", {
+        type: "button", "aria-pressed": String((p.status || "active") === st.value), onclick: () => save("status")(st.value),
+      }, st.label))),
+      workTasks("project", p),
       inlineEdit({ id: `sum-${id}`, value: p.summary, placeholder: "Add what this project is for", label: "What it's for", multiline: true, onSave: save("summary") }),
       kv([
         ["Owner", pickPerson({ id: `powner-${id}`, value: p.owner_id, label: "Owner", onChange: save("owner_id") })],
         ["Due", inlineEdit({ id: `pdue-${id}`, value: p.due, display: fmtDate(p.due), placeholder: "Add date", label: "Due", type: "date", onSave: save("due") })],
         ["Team", team.length > 0 && h("div", { class: "chips" }, team.map(personChip))],
-        ["Deal", deal && h("button", { class: "person-chip", type: "button", onclick: () => openDeal(deal.id) }, deal.name)],
+        ["Deal", deal && h("button", { class: "wtag", type: "button", onclick: () => openDeal(deal.id) }, workMark({ kind: "deal", rec: deal }), h("span", null, deal.name))],
       ]),
-      tasksBlock(tasksForProject(id), `task-project-${id}`, { project_id: id, owner_id: state.me.id || p.owner_id || null }, { showProject: false }),
       notesBlock("project", id),
+      !deal && sell,
       p.source && h("div", { class: "small muted" }, "Source: " + p.source));
   });
 }
@@ -233,9 +257,8 @@ export function openPerson(id) {
   openDrawer(() => {
     const p = byId("people", id);
     if (!p) return null;
-    const deals = dealsForPerson(id);
+    const work = workFor(id);
     const reports = state.people.filter((x) => x.reports_to === id);
-    const projects = projectsForPerson(id).filter((x) => x.status !== "done");
     const save = (key) => (v) => update("people", id, { [key]: v });
     return drawerFrame(
       { eyebrow: teamName(p.team_id) || "Team member", title: p.name, sub: p.title, actions: editBtn("people", p) },
@@ -253,8 +276,7 @@ export function openPerson(id) {
           ["Note", p.note],
         ])),
       tasksBlock(tasksForPerson(id), `task-person-${id}`, { owner_id: id }, { showOwner: false }),
-      projects.length > 0 && block(`Projects · ${projects.length}`, projectRows(projects)),
-      deals.length > 0 && block(`Deals · ${deals.length}`, dealRows(deals)),
+      work.length > 0 && block(`${work.every((w) => w.kind === "deal") ? "Deals" : work.every((w) => w.kind === "project") ? "Projects" : "Deals and projects"} · ${work.length}`, workRows(work)),
       notesBlock("person", id));
   });
 }
@@ -268,8 +290,12 @@ export function openDeal(id) {
     const team = (d.people_ids || []).filter((p) => p !== d.owner_id && byId("people", p));
     const outside = (d.contact_ids || []).map((c) => byId("contacts", c)).filter(Boolean);
     const save = (key) => (v) => update("deals", id, { [key]: v });
+    const pr = progress("deal", id);
+    const under = projectsForDeal(id).map((p) => ({ kind: "project", id: p.id, rec: p, name: p.name, ...progress("project", p.id) }));
     return drawerFrame(
-      { eyebrow: [d.kind && d.kind[0].toUpperCase() + d.kind.slice(1), d.region].filter(Boolean).join(" · ") || "Deal", title: d.name, sub: d.organisation, actions: editBtn("deals", d) },
+      { eyebrow: [d.kind && d.kind[0].toUpperCase() + d.kind.slice(1), d.region].filter(Boolean).join(" · ") || "Deal", title: d.name,
+        sub: [d.organisation, doneLine(pr)].filter(Boolean).join(" · "), actions: editBtn("deals", d) },
+      progressBar(pr.done, pr.total),
       h("div", { class: "stage-pick", role: "group", "aria-label": "Stage" }, STAGES.map((s) => h("button", {
         type: "button", "aria-pressed": String(d.stage === s.value),
         onclick: () => setStage(id, s.value),
@@ -277,8 +303,9 @@ export function openDeal(id) {
       d.to_confirm && h("div", { class: "confirm" },
         h("div", { class: "confirm__text" }, h("div", { class: "caps" }, "To confirm"), h("div", null, d.to_confirm)),
         h("button", { class: "btn btn--small", type: "button", onclick: () => clearToConfirm(d) }, "Confirmed")),
+      workTasks("deal", d),
+      !pr.total && d.next_step && h("div", { class: "small muted" }, "Next step noted earlier: " + d.next_step),
       kv([
-        ["Next step", inlineEdit({ id: `next-${id}`, value: d.next_step, placeholder: "Add next step", label: "Next step", onSave: save("next_step") })],
         ["Last contact", contactDate("deals", d)],
         ["Owner", pickPerson({ id: `owner-${id}`, value: d.owner_id, label: "Owner", onChange: save("owner_id") })],
         ["Size", size
@@ -288,11 +315,10 @@ export function openDeal(id) {
         ["Outside", outside.length > 0 && h("div", { class: "chips" }, outside.map((c) =>
           h("button", { class: "person-chip", type: "button", onclick: () => openContact(c.id) }, avatar(c.name, "s"), c.name)))],
       ]),
-      d.summary && h("div", { class: "prose sub" }, d.summary),
-      projectsForDeal(id).length > 0
-        ? block(`Projects · ${projectsForDeal(id).length}`, projectRows(projectsForDeal(id)))
-        : h("button", { class: "more", type: "button", onclick: () => startProjectFor(d) }, "+ Start a project for this deal"),
-      tasksBlock(state.tasks.filter((t) => t.deal_id === id), `task-deal-${id}`, { deal_id: id, owner_id: d.owner_id || null }),
+      inlineEdit({ id: `sum-${id}`, value: d.summary, placeholder: "Add what this deal is about", label: "Summary", multiline: true, onSave: save("summary") }),
+      under.length > 0 && block(`Projects under this deal · ${under.length}`, workRows(under)),
+      h("button", { class: "more", type: "button", onclick: () => editRecord("projects", null,
+        { status: "active", deal_id: id, owner_id: state.me.id || d.owner_id || null, people_ids: [] }, (row) => openProject(row.id)) }, "+ Add a project under this deal"),
       notesBlock("deal", id),
       d.source && h("div", { class: "small muted" }, "Source: " + d.source));
   });

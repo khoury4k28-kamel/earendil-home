@@ -79,9 +79,11 @@ export function fieldsFor(table, record = {}) {
       { key: "owner_id", label: "Owner", type: "select", options: people(), blank: "Nobody yet" },
       { key: "status", label: "Status", type: "select", required: true, options: TASK_STATUS },
       { key: "due", label: "Due", type: "date" },
-      { key: "project_id", label: "Project", type: "select", options: projects(), blank: "No project (a quick to-do)" },
+      { key: "belongs", label: "Belongs to", type: "select", blank: "Nothing (a quick to-do)", groups: [
+        { label: "Deals", options: deals().map((o) => ({ value: "deal:" + o.value, label: o.label })) },
+        { label: "Projects", options: projects().map((o) => ({ value: "project:" + o.value, label: o.label })) },
+      ] },
       { key: "team_id", label: "Team", type: "select", options: teams(), blank: "No team" },
-      { key: "deal_id", label: "Deal", type: "select", options: deals(), blank: "No deal" },
       { key: "company_wide", type: "checkbox", label: "Company-wide", checkLabel: "Show on Home as a company-wide to-do" },
     ];
     case "projects": return [
@@ -89,7 +91,7 @@ export function fieldsFor(table, record = {}) {
       { key: "owner_id", label: "Owner", type: "select", options: people(), blank: "Nobody yet" },
       { key: "status", label: "Status", type: "select", required: true, options: PROJECT_STATUS },
       { key: "due", label: "Due", type: "date" },
-      { key: "deal_id", label: "About a deal", type: "select", options: deals(), blank: "No deal" },
+      { key: "deal_id", label: "Under a deal", type: "select", options: deals(), blank: "No deal" },
       { key: "people_ids", label: "Who's on it", type: "multi", options: people(), none: "Add people on the People tab first." },
       { key: "summary", label: "What it's for", type: "textarea" },
     ];
@@ -105,7 +107,6 @@ export function fieldsFor(table, record = {}) {
       { key: "size_note", label: "About the size", wide: true, placeholder: "Estimate or firm? Where the figure comes from" },
       { key: "people_ids", label: "Who's involved (team)", type: "multi", options: people(), none: "Add people first." },
       { key: "contact_ids", label: "Who's involved (outside)", type: "multi", options: contacts(), none: "Add contacts in the CRM first." },
-      { key: "next_step", label: "Next step", wide: true },
       { key: "last_touch", label: "Last contact", type: "date" },
       { key: "summary", label: "Summary", type: "textarea" },
       { key: "to_confirm", label: "To confirm", wide: true, placeholder: "Anything on this card that still needs checking" },

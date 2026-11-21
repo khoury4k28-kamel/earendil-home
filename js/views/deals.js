@@ -5,6 +5,7 @@ import { h, avatar, letterAvatar, fmtDate, fmtMoney, fmtRange, daysSince, plural
 import { state, update, isOpenDeal, personName, sortByName } from "../store.js";
 import { STAGES, stageLabel } from "../schema.js";
 import { editRecord, openDeal, stalledDays, setStage, dealIssues, pickPerson } from "../detail.js";
+import { nextStep, setNextStep, progress } from "../work.js";
 
 let mode = "board";
 try { mode = localStorage.getItem("deals-view") || "board"; } catch { /* storage may be blocked */ }
@@ -63,6 +64,8 @@ function dealCard(d) {
   const stalled = stalledDays(d);
   const days = d.last_touch ? daysSince(d.last_touch) : null;
   const open = () => openDeal(d.id);
+  const next = nextStep(d);
+  const pr = progress("deal", d.id);
   return h("div", {
     class: "deal", role: "button", tabindex: "0", draggable: "true",
     onclick: open,
@@ -74,9 +77,10 @@ function dealCard(d) {
         h("div", { class: "deal__name" }, d.name),
         h("div", { class: "deal__meta" }, [d.kind && d.kind[0].toUpperCase() + d.kind.slice(1), d.region].filter(Boolean).join(" · ")),
         size && h("div", { class: "deal__size num" }, size))),
-    isOpenDeal(d) && h("div", { class: "deal__next" + (d.next_step ? "" : " muted") }, d.next_step || "No next step"),
+    isOpenDeal(d) && h("div", { class: "deal__next" + (next ? "" : " muted") }, next || "No next step"),
     h("div", { class: "deal__foot" },
       d.owner_id && personName(d.owner_id) ? avatar(personName(d.owner_id), "s") : h("span", { class: "muted" }, "No owner"),
+      pr.total > 0 && h("span", { class: "days", title: `${pr.done} of ${pr.total} tasks done` }, `${pr.done}/${pr.total}`),
       stalled ? h("span", { class: "stalled", title: `No contact in ${stalled} days` }, `${stalled}d`)
         : isOpenDeal(d) && days != null && h("span", { class: "days", title: "Since the last contact" }, days <= 0 ? "today" : `${days}d`)));
 }
@@ -105,7 +109,7 @@ function board(deals) {
   })));
 }
 
-// The table edits in place: owner, last contact and next step.
+// The table edits in place: owner, last contact and next step (the deal's next task).
 function table(deals) {
   const order = Object.fromEntries(STAGES.map((s, i) => [s.value, i]));
   const sorted = [...deals].sort((a, b) => order[a.stage] - order[b.stage] || a.name.localeCompare(b.name));
@@ -123,7 +127,7 @@ function table(deals) {
         h("td", { class: "tight" },
           inlineEdit({ id: `t-touch-${d.id}`, value: d.last_touch, display: fmtDate(d.last_touch), placeholder: "Add date", label: `Last contact on ${d.name}`, type: "date", onSave: save("last_touch") }),
           stalled && h("div", { class: "stalled small" }, `Stalled ${stalled}d`)),
-        h("td", { class: "cell-edit" }, inlineEdit({ id: `t-next-${d.id}`, value: d.next_step, placeholder: "Add next step", label: `Next step on ${d.name}`, onSave: save("next_step") })));
+        h("td", { class: "cell-edit" }, inlineEdit({ id: `t-next-${d.id}`, value: nextStep(d), placeholder: "Add next step", label: `Next step on ${d.name}`, onSave: (v) => setNextStep(d, v) })));
     }))));
 }
 

@@ -235,7 +235,25 @@ button.card:hover, a.card:hover { border-color: var(--ink); }
 .bar > span { display: block; height: 100%; border-radius: 3px; background: var(--ink); }
 .drawer .bar { display: block; width: 100%; }
 .prow__n { flex: none; font-size: 13px; color: var(--muted); }
-.prow.done .arow__title { color: var(--muted); }
+.wrow.done .arow__title { color: var(--muted); }
+.wrow > .dot, .wrow > .pmark { margin-right: 0; align-self: center; flex: none; }
+/* A project's mark: a small open square, where a deal has its stage dot. */
+.pmark { display: inline-block; width: 8px; height: 8px; border-radius: 2px; box-shadow: inset 0 0 0 1.5px var(--muted); flex: none; }
+.row__title > .dot, .row__title > .pmark { margin-right: 8px; }
+/* The label a task carries: the deal or project it belongs to. */
+.wtag { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 2px 9px 2px 8px; border-radius: 999px; background: var(--soft-2); color: var(--text-2); font-size: 12.5px; font-weight: 500; line-height: 1.5; }
+.wtag:hover { color: var(--ink); background: var(--line); }
+.wtag > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wtag .dot, .wtag .pmark { margin: 0; width: 7px; height: 7px; }
+/* A task row whose middle holds a title button and a line with its tag. */
+.arow__main--row { cursor: pointer; }
+.arow__go { display: block; max-width: 100%; text-align: left; overflow-wrap: anywhere; }
+.arow__main--row:hover .arow__go { text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--line-2); }
+.arow__sub { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin-top: 4px; font-size: 13px; color: var(--muted); min-width: 0; }
+.arow__sub > span:empty { display: none; }
+/* The first open task of a deal or project. */
+.next { display: inline-block; margin-right: 8px; padding: 0 6px; border-radius: 5px; background: var(--ink); color: #fff; font-size: 11px; font-weight: 600; letter-spacing: 0.02em; line-height: 1.7; vertical-align: 1px; }
+.sec__head .actions { flex-wrap: wrap; justify-content: flex-end; }
 
 /* deals board */
 .board-wrap { overflow-x: auto; margin: 0 calc(var(--gutter) * -1); padding: 0 var(--gutter) 6px; }

@@ -13,8 +13,9 @@ function control(f, value) {
     case "select": {
       const sel = h("select", { class: "select", id },
         !f.required && h("option", { value: "" }, f.blank || "Not set"),
-        f.options.map((o) => h("option", { value: o.value }, o.label)));
-      sel.value = value ?? (f.required ? f.options[0]?.value : "");
+        (f.options || []).map((o) => h("option", { value: o.value }, o.label)),
+        (f.groups || []).filter((g) => g.options.length).map((g) => h("optgroup", { label: g.label }, g.options.map((o) => h("option", { value: o.value }, o.label)))));
+      sel.value = value ?? (f.required ? f.options?.[0]?.value : "");
       return sel;
     }
     case "multi": {

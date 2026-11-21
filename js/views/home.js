@@ -20,8 +20,9 @@ import { state, saveSetting, isOpenDeal, create, update, byId, personName, setVi
 import { openForm } from "../form.js";
 import {
   editRecord, openDeal, openPerson, openContact, dealIssues, stalledDays, pickPerson,
-  logContact, takeDeal, finishTask, clearToConfirm, openProject, projectProgress, progressBar,
+  logContact, takeDeal, finishTask, clearToConfirm, openProject, progressBar, workTag, workMark, openWork,
 } from "../detail.js";
+import { workOf, nextStep, allWork, isLive, isActive, isOn } from "../work.js";
 import { stageLabel } from "../schema.js";
 import { findCountry, findCountries, personPlace } from "../places.js";
 
@@ -31,9 +32,10 @@ let scope = null;        // "mine" | "all"; null = decide from who is signed in
 let openTidy = null;     // which "Tidy up" row is open
 let tidyAll = false;
 let grabsAll = false;
-let projectsAll = false;
-let projectsDone = false;   // also list finished projects
-const PROJECT_LIMIT = 5;
+let what = "all";        // tasks shown: "all", or "quick" for the ones that belong to nothing
+let workAll = false;
+let workDone = false;    // also list finished projects
+const WORK_LIMIT = 6;
 let radarAll = false;
 const RADAR_LIMIT = 6;
 const TASK_LIMIT = 5;
@@ -151,7 +153,15 @@ const meId = () => state.me.id;
 const onDeal = (d) => Boolean(meId() && (d.owner_id === meId() || (d.people_ids || []).includes(meId())));
 // "mine", "theirs" (a teammate's) or "open" (nobody's yet)
 const dealBelongs = (d) => (onDeal(d) ? "mine" : personName(d.owner_id) ? "theirs" : "open");
-const taskBelongs = (t) => (meId() && t.owner_id === meId() ? "mine" : personName(t.owner_id) ? "theirs" : "open");
+// A task with no owner follows its deal or project.
+function taskBelongs(t) {
+  if (meId() && t.owner_id === meId()) return "mine";
+  if (personName(t.owner_id)) return "theirs";
+  const w = workOf(t);
+  if (w && isOn(w.rec, meId())) return "mine";
+  if (w && personName(w.rec.owner_id)) return "theirs";
+  return "open";
+}
 
 // ---------- everything that could need a person, each with a score ----------
 // Higher scores are more pressing. What is mine counts for more; a teammate's
@@ -166,22 +176,23 @@ function workItems() {
     const soon = left != null && left <= 7;
     const belongs = taskBelongs(t);
     const edit = () => editRecord("tasks", t);
-    // A task inside a project is listed under its project. It only competes
-    // for Today when it is overdue or due this week.
-    const project = byId("projects", t.project_id);
-    if (project && (project.status !== "active" || !(overdue || soon))) continue;
+    // Every task carries its deal or project. Work that is on hold, finished,
+    // signed or closed keeps its tasks to itself.
+    const w = workOf(t);
+    if (w && !isActive(w.kind, w.rec)) continue;
     items.push({
-      key: "task:" + t.id, type: "task", belongs, title: t.title, open: edit, tick: () => finishTask(t), inProject: Boolean(project),
+      key: "task:" + t.id, type: "task", belongs, title: t.title, open: edit, tick: () => finishTask(t),
+      quick: !w, tag: workTag(t), workName: w?.name,
       score: overdue ? 100 + Math.min(30, daysSince(t.due)) : soon ? 70 - left : 55,
       action: belongs === "open" ? (meId() ? ["Take it", () => takeTask(t)] : ["Assign", edit]) : ["Done", () => finishTask(t)],
       meta: [belongs !== "mine" && personName(t.owner_id), overdue ? red(`Overdue since ${fmtDate(t.due)}`) : t.due && `Due ${fmtDate(t.due)}`,
-        t.status === "doing" && "In progress", project?.name, byId("deals", t.deal_id)?.name],
+        t.status === "doing" && "In progress"],
     });
   }
   for (const d of state.deals) {
     if (!isOpenDeal(d)) continue;
     const quiet = stalledDays(d);
-    if (!quiet && d.next_step) continue;
+    if (!quiet && nextStep(d)) continue;
     const belongs = dealBelongs(d);
     const base = { type: "deal", belongs, open: () => openDeal(d.id) };
     const about = [d.organisation !== d.name && d.organisation, stageLabel(d.stage), belongs !== "mine" && personName(d.owner_id)];
@@ -190,7 +201,7 @@ function workItems() {
         tick: () => logContact("deals", d), action: ["Log contact", () => logContact("deals", d)], meta: [red(`No contact in ${quiet} days`), ...about] });
     } else {
       items.push({ ...base, key: `deal:${d.id}:next`, score: 45, title: `Set the next step for ${d.name}`,
-        tick: () => openAt(d.id, "next"), action: ["Add next step", () => openAt(d.id, "next")], meta: about });
+        tick: () => openAt(d.id, "task-deal"), action: ["Add next step", () => openAt(d.id, "task-deal")], meta: about });
     }
   }
   for (const m of state.milestones) {
@@ -241,14 +252,21 @@ function claim() {
       h("button", { class: "person-chip", type: "button", onclick: () => pick(p) }, avatar(p.name, "s"), p.name))));
 }
 
+// The middle of a task row. Clicking it opens the task; its tag (the deal or
+// project it belongs to) opens that instead.
+function cell(it, titleClass) {
+  return h("div", { class: "arow__main arow__main--row", onclick: it.open },
+    h("button", { class: "arow__go " + titleClass, type: "button" }, it.title),
+    (it.tag || it.meta.some(Boolean)) && h("div", { class: "arow__sub" }, it.tag, h("span", null, dots(it.meta))));
+}
+
 // ---------- 1. today ----------
 function today(top) {
   if (!top.length) return null;
   return section(top.length === 3 ? "Today · Top 3" : "Today", null,
     h("ol", null, top.map((it, i) => h("li", { class: "rrow" },
       h("span", { class: "rrow__n num", "aria-hidden": "true" }, String(i + 1).padStart(2, "0")),
-      h("button", { class: "arow__main", type: "button", onclick: it.open },
-        h("div", { class: "rrow__title" }, it.title), h("div", { class: "arow__text" }, dots(it.meta))),
+      cell(it, "rrow__title"),
       it.action && h("button", { class: "btn", type: "button", onclick: it.action[1] }, it.action[0])))));
 }
 
@@ -256,90 +274,95 @@ function today(top) {
 function taskRows(items) {
   return h("ul", null, items.map((it) => h("li", { class: "arow trow" },
     h("button", { class: "check", type: "button", role: "checkbox", "aria-checked": "false", "aria-label": "Done: " + it.title, onclick: it.tick }),
-    h("button", { class: "arow__main", type: "button", onclick: it.open },
-      h("div", { class: "arow__title" }, it.title), h("div", { class: "arow__text" }, dots(it.meta))),
+    cell(it, "arow__title"),
     it.action && it.action[0] !== "Done" && h("button", { class: "btn", type: "button", onclick: it.action[1] }, it.action[0]),
     h("button", { class: "quiet", type: "button", "aria-label": "Snooze: " + it.title, onclick: () => snooze(it.key) }, "Snooze"))));
 }
+// Two switches: whose tasks (Mine / Everyone) and which (All, or only the
+// quick to-dos that belong to no deal or project).
+function seg(label, options, current, set) {
+  return h("div", { class: "seg seg--small", role: "group", "aria-label": label }, options.map(([value, text]) =>
+    h("button", { type: "button", "aria-pressed": String(current === value), onclick: () => { set(value); refresh(); } }, text)));
+}
 function tasks(rest, snoozedCount) {
   const mine = rest.filter((it) => it.belongs === "mine");
-  const which = meId() ? scope || "mine" : "all";
-  const items = which === "mine" ? mine : rest;
+  const whose = meId() ? scope || "mine" : "all";
+  const pool = whose === "mine" ? mine : rest;
+  const quick = pool.filter((it) => it.type === "task" && it.quick);
+  const items = what === "quick" ? quick : pool;
   const shown = showAll ? items : items.slice(0, TASK_LIMIT);
-  const toggle = meId() && h("div", { class: "seg seg--small", role: "group", "aria-label": "Whose tasks" },
-    h("button", { type: "button", "aria-pressed": String(which === "mine"), onclick: () => { scope = "mine"; refresh(); } }, `Mine ${mine.length}`),
-    h("button", { type: "button", "aria-pressed": String(which === "all"), onclick: () => { scope = "all"; refresh(); } }, `Everyone ${rest.length}`));
-  return section(`${which === "mine" ? "Your tasks" : "Tasks"} · ${items.length}`,
+  return section(`${whose === "mine" ? "Your tasks" : "Tasks"} · ${items.length}`,
     h("div", { class: "actions" },
       snoozedCount > 0 && h("button", { class: "more more--head", type: "button", onclick: () => setSnoozed({}) }, `${snoozedCount} snoozed · Show`),
-      toggle),
+      seg("Which tasks", [["all", `All ${pool.length}`], ["quick", `Quick ${quick.length}`]], what, (v) => { what = v; }),
+      meId() && seg("Whose tasks", [["mine", `Mine ${mine.length}`], ["all", `Everyone ${rest.length}`]], whose, (v) => { scope = v; })),
     shown.length > 0 && taskRows(shown),
     moreBtn(items.length - shown.length, showAll, () => { showAll = !showAll; refresh(); }),
-    // A to-do added under "Mine" is yours. Under "Everyone" (or with nobody
-    // signed in) it has no owner yet, so anyone can take it.
-    quickAdd("quick-todo", which === "mine" ? "Add a to-do for me" : "Add a to-do for anyone",
-      (title) => create("tasks", { title, status: "todo", company_wide: which !== "mine", owner_id: which === "mine" ? meId() : null })));
+    // The box adds a quick to-do. Under "Mine" it is yours; under "Everyone"
+    // (or with nobody signed in) it has no owner yet, so anyone can take it.
+    quickAdd("quick-todo", whose === "mine" ? "Add a to-do for me" : "Add a to-do for anyone",
+      (title) => create("tasks", { title, status: "todo", company_wide: whose !== "mine", owner_id: whose === "mine" ? meId() : null })));
 }
 
-// ---------- projects: longer work, each with its own tasks ----------
-const onProject = (p) => Boolean(meId() && (p.owner_id === meId() || (p.people_ids || []).includes(meId())));
+// ---------- deals and projects: one list ----------
+// A deal is a project with a pipeline, so they sit together: each row has its
+// progress and the task to do next.
 async function addProject(name, mine) {
   const row = await create("projects", { name, status: "active", owner_id: mine ? meId() : null, people_ids: [], deal_id: null, summary: null, due: null });
   if (row) openProject(row.id);   // straight to its panel, ready for its first tasks
 }
-function projects() {
+function work() {
   const mineOnly = Boolean(meId()) && (scope || "mine") === "mine";
-  const pool = state.projects.filter((p) => !mineOnly || onProject(p));
-  const done = pool.filter((p) => p.status === "done");
-  const rank = { active: 0, paused: 1, done: 2 };
-  const list = pool.filter((p) => projectsDone || p.status !== "done")
-    .sort((a, b) => (rank[a.status] ?? 0) - (rank[b.status] ?? 0) || String(a.due || "9").localeCompare(String(b.due || "9")) || a.name.localeCompare(b.name));
-  const shown = projectsAll ? list : list.slice(0, PROJECT_LIMIT);
+  const pool = allWork().filter((w) => !mineOnly || isOn(w.rec, meId()));
+  const live = pool.filter((w) => isLive(w.kind, w.rec));
+  const finished = pool.filter((w) => w.kind === "project" && w.rec.status === "done");
+  const rank = (w) => (w.kind === "project" && w.rec.status === "done" ? 2 : w.kind === "project" && w.rec.status === "paused" ? 1 : 0);
+  const list = [...live, ...(workDone ? finished : [])].sort((a, b) => rank(a) - rank(b) ||
+    String(a.next?.due || "9").localeCompare(String(b.next?.due || "9")) || a.name.localeCompare(b.name));
+  const shown = workAll ? list : list.slice(0, WORK_LIMIT);
+  const kinds = new Set(list.map((w) => w.kind));
+  const name = kinds.size === 1 ? (kinds.has("deal") ? "deals" : "projects") : "deals and projects";
   const today = todayISO();
-  return section(`${mineOnly ? "Your projects" : "Projects"} · ${list.length}`,
-    done.length > 0 && h("button", { class: "more more--head", type: "button", onclick: () => { projectsDone = !projectsDone; refresh(); } },
-      projectsDone ? "Hide finished" : `${done.length} finished · Show`),
-    shown.length > 0 && h("ul", null, shown.map((p) => {
-      const { total, done: n, next } = projectProgress(p);
-      const late = p.status === "active" && p.due && p.due < today;
-      return h("li", { class: "arow prow" + (p.status === "done" ? " done" : "") },
-        h("button", { class: "arow__main", type: "button", onclick: () => openProject(p.id) },
-          h("div", { class: "arow__title" }, p.name),
+  return section(`${mineOnly ? "Your " + name : name[0].toUpperCase() + name.slice(1)} · ${list.length}`,
+    h("div", { class: "actions" },
+      finished.length > 0 && h("button", { class: "more more--head", type: "button", onclick: () => { workDone = !workDone; refresh(); } },
+        workDone ? "Hide finished" : `${finished.length} finished · Show`),
+      state.deals.length > 0 && h("a", { class: "link small", href: "#deals" }, "All deals")),
+    shown.length > 0 && h("ul", null, shown.map((w) => {
+      const r = w.rec;
+      const done = rank(w) === 2;
+      const quiet = w.kind === "deal" ? stalledDays(r) : null;
+      const late = w.kind === "project" && r.status === "active" && r.due && r.due < today;
+      return h("li", { class: "arow wrow" + (done ? " done" : "") },
+        workMark(w),
+        h("button", { class: "arow__main", type: "button", onclick: () => openWork(w.kind, w.id) },
+          h("div", { class: "arow__title" }, w.name),
           h("div", { class: "arow__text" }, dots([
-            p.status === "paused" && "On hold", p.status === "done" && "Finished",
-            !onProject(p) && personName(p.owner_id),
-            p.status !== "done" && (next ? `Next: ${next.title}` : total ? "All tasks done" : "No tasks yet"),
-            late ? red(`Due ${fmtDate(p.due)}`) : p.due && p.status !== "done" && `Due ${fmtDate(p.due)}`]))),
-        total > 0 && h("span", { class: "prow__n num" }, `${n}/${total}`),
-        progressBar(n, total));
+            rank(w) === 1 && "On hold", done && "Finished",
+            !isOn(r, meId()) && personName(r.owner_id),
+            !done && (w.next ? `Next: ${w.next.title}` : w.kind === "deal" ? (r.next_step ? `Next: ${r.next_step}` : "No next step") : w.total ? "All tasks done" : "No tasks yet"),
+            late ? red(`Due ${fmtDate(r.due)}`) : w.kind === "project" && r.due && !done && `Due ${fmtDate(r.due)}`]))),
+        quiet && h("span", { class: "stalled", title: `No contact in ${quiet} days` }, `${quiet}d`),
+        w.total > 0 && h("span", { class: "prow__n num" }, `${w.done}/${w.total}`),
+        progressBar(w.done, w.total));
     })),
-    moreBtn(list.length - shown.length, projectsAll, () => { projectsAll = !projectsAll; refresh(); }),
-    quickAdd("quick-project", mineOnly ? "Add a project for me" : "Add a project", (name) => addProject(name, mineOnly)));
+    moreBtn(list.length - shown.length, workAll, () => { workAll = !workAll; refresh(); }),
+    quickAdd("quick-project", mineOnly ? "Add a project for me" : "Add a project", (title) => addProject(title, mineOnly)));
 }
 
-// ---------- your deals ----------
-function myDeals() {
-  if (!meId()) return null;
-  const deals = state.deals.filter((d) => isOpenDeal(d) && onDeal(d)).sort((a, b) => a.name.localeCompare(b.name));
-  if (!deals.length) return null;
-  return section(`Your deals · ${deals.length}`, h("a", { class: "link small", href: "#deals" }, "All deals"),
-    h("ul", null, deals.map((d) => {
-      const quiet = stalledDays(d);
-      const days = d.last_touch ? daysSince(d.last_touch) : null;
-      return h("li", { class: "arow" },
-        h("span", { class: "dot drow__dot c-" + (d.stage || "lead"), title: stageLabel(d.stage) }),
-        h("button", { class: "arow__main", type: "button", onclick: () => openDeal(d.id) },
-          h("div", { class: "arow__title" }, d.name),
-          h("div", { class: "arow__text" }, d.next_step || "No next step")),
-        quiet ? h("span", { class: "stalled" }, `${quiet}d`) : days != null && h("span", { class: "days", title: "Since the last contact" }, days <= 0 ? "today" : `${days}d`));
-    })));
+function takeProject(p) {
+  const before = p.owner_id || null;
+  update("projects", p.id, { owner_id: meId() });
+  toast(`${p.name} is yours.`, ["Undo", () => update("projects", p.id, { owner_id: before })]);
 }
-
 // ---------- up for grabs: work nobody owns yet ----------
 function upForGrabs(rest) {
   if (!meId()) return null;
   const rows = [
-    ...rest.filter((it) => it.type === "task" && it.belongs === "open").map((it) => ({ title: it.title, text: "To-do", open: it.open, take: it.action[1] })),
+    // A task under a deal or project nobody owns isn't listed on its own: taking the deal or project covers it.
+    ...rest.filter((it) => it.type === "task" && it.belongs === "open" && it.quick).map((it) => ({ title: it.title, text: "To-do", open: it.open, take: it.action[1] })),
+    ...state.projects.filter((p) => (p.status || "active") === "active" && !personName(p.owner_id) && !isOn(p, meId())).sort((a, b) => a.name.localeCompare(b.name))
+      .map((p) => ({ title: p.name, text: "Project", open: () => openProject(p.id), take: () => takeProject(p) })),
     ...state.deals.filter((d) => isOpenDeal(d) && !personName(d.owner_id) && !onDeal(d)).sort((a, b) => a.name.localeCompare(b.name))
       .map((d) => ({ title: d.name, text: ["Deal", stageLabel(d.stage), d.organisation !== d.name && d.organisation].filter(Boolean).join(" · "), open: () => openDeal(d.id), take: () => takeDeal(d) })),
   ];
@@ -369,7 +392,7 @@ function changes() {
   const myEmail = (state.me.email || "").toLowerCase();
   const who = (email) => state.people.find((p) => (p.email || "").toLowerCase() === String(email || "").toLowerCase())?.name || String(email || "").split("@")[0];
   const kinds = { deal: ["deals", openDeal], person: ["people", openPerson], contact: ["contacts", openContact], project: ["projects", openProject] };
-  const isMine = (type, rec) => (type === "deal" ? onDeal(rec) : type === "project" ? onProject(rec) : type === "task" ? rec.owner_id === meId() : type === "contact" ? rec.owner_id === meId() : false) && Boolean(meId());
+  const isMine = (type, rec) => (type === "deal" ? onDeal(rec) : type === "project" ? isOn(rec, meId()) : type === "task" ? rec.owner_id === meId() : type === "contact" ? rec.owner_id === meId() : false) && Boolean(meId());
   const rows = [];
   const seen = new Set();
   for (const a of state.activity) {
@@ -560,8 +583,7 @@ export function render() {
   const all = workItems();
   const top = topThree(all);
   const picked = new Set(top.map((it) => it.key));
-  // Quick to-dos and deal follow-ups; tasks inside a project sit under the project.
-  const rest = all.filter((it) => !picked.has(it.key) && it.type !== "date" && !it.inProject);
+  const rest = all.filter((it) => !picked.has(it.key) && it.type !== "date");
   const hiddenCount = Object.keys(snoozed()).length;
   const mission = state.settings.mission;
   const news = radar();
@@ -569,7 +591,7 @@ export function render() {
     h("div", { class: "home__head page-head__text" }, h("h1", { class: "h1" }, greeting()), pulse(), yourUpdate()),
     h("div", { class: "home__main" },
       claim(),
-      today(top), tasks(rest, hiddenCount), projects(), myDeals(), upForGrabs(rest), changes(), goals(),
+      today(top), tasks(rest, hiddenCount), work(), upForGrabs(rest), changes(), goals(),
       comingUp(new Set(top.filter((it) => it.type === "date").map((it) => it.id))), team(), tidy(),
       h("button", { class: "missionline", type: "button", onclick: openAbout, title: "Mission, values and what we sell" }, (mission || "Write the mission") + " →")),
     news);
