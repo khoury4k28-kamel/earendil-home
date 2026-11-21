@@ -24,8 +24,8 @@ function emit() { whoAmI(); for (const fn of listeners) fn(); }
 // picked to see the hub as they would ("view as").
 let viewAs = null;
 try { viewAs = localStorage.getItem("preview-as") || null; } catch { /* storage may be blocked */ }
-// A first name, "first.last" or "flast" before the @ points at that person, as
-// long as only one person on the team fits. It saves typing an email onto
+// Initials (first and last), a first name, "first.last" or "flast" before the @
+// point at that person, as long as only one person on the team fits. It saves typing an email onto
 // every profile.
 function guessByName(email) {
   const local = email.split("@")[0].toLowerCase().replace(/[^a-z.]/g, "");
@@ -33,7 +33,7 @@ function guessByName(email) {
   const hits = state.people.filter((p) => {
     const parts = String(p.name || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").split(/\s+/).filter(Boolean);
     const f = parts[0] || "", l = parts.length > 1 ? parts[parts.length - 1] : "";
-    return [f, l, `${f}.${l}`, `${f}${l}`, `${f[0]}${l}`, `${f[0]}.${l}`, `${f}${l[0] || ""}`, `${f}.${l[0] || ""}`].filter((x) => x && x !== ".").includes(local);
+    return [`${f[0] || ""}${l[0] || ""}`, f, l, `${f}.${l}`, `${f}${l}`, `${f[0]}${l}`, `${f[0]}.${l}`, `${f}${l[0] || ""}`, `${f}.${l[0] || ""}`].filter((x) => x && x !== ".").includes(local);
   });
   return hits.length === 1 ? hits[0] : null;
 }

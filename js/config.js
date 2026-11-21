@@ -8,7 +8,7 @@ export const config = {
   supabaseKey: "",
 
   // Sign-in is for the team's own addresses only.
-  emailDomain: "earendil.io",
+  emailDomain: "earendilrobotics.com",
 
   // Local preview only: the team password, as a salted hash in a private file
   // that never leaves this Mac. Set it with vault/_admin/set-team-password.py.

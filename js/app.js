@@ -110,7 +110,7 @@ function readSession() {
 
 function gate({ connected, message, signedInAs, signIn, note }) {
   const error = h("div", { class: "form-error", hidden: !message }, message || "");
-  const email = h("input", { class: "input", id: "gate-email", type: "email", autocomplete: "username", required: true, placeholder: "name@" + config.emailDomain });
+  const email = h("input", { class: "input", id: "gate-email", type: "email", autocomplete: "username", required: true, placeholder: "initials@" + config.emailDomain });
   const password = h("input", { class: "input", id: "gate-password", type: "password", autocomplete: "current-password", required: true });
   const button = h("button", { class: "btn btn--primary", type: "submit" }, "Sign in");
   const form = h("form", { class: "block" },
@@ -122,7 +122,7 @@ function gate({ connected, message, signedInAs, signIn, note }) {
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
     const address = email.value.trim();
-    if (!teamEmail(address)) { fail(`Use your Earendil email (name@${config.emailDomain}).`); email.focus(); return; }
+    if (!teamEmail(address)) { fail(`Use your Earendil email (your initials@${config.emailDomain}).`); email.focus(); return; }
     button.disabled = true;
     const problem = await signIn(address, password.value);
     button.disabled = false;
