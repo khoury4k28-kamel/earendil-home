@@ -5,13 +5,17 @@
 // pan (it glides on release), double-click to zoom in, click a country or a
 // bubble to fly to it. Hovering a country, a bubble or a row in the list shows
 // what is there.
+//
+// Adding and editing happen here too: click any country and type a name to add
+// a contact there, "Add contact" opens the full form, each row has Edit, and a
+// contact with no country gets one typed in place.
 
-import { h, refresh, plural } from "../ui.js";
-import { state, byId, dealsForContact, sortByName } from "../store.js";
+import { h, refresh, plural, toast, quickAdd, inlineEdit } from "../ui.js";
+import { state, byId, create, update, remove, dealsForContact, sortByName } from "../store.js";
 import { CATEGORIES, categoryLabel, stageLabel } from "../schema.js";
-import { openContact, openDeal, openPerson, dealIssues } from "../detail.js";
+import { openContact, openDeal, openPerson, dealIssues, editRecord } from "../detail.js";
 import { W, H, SHAPES, PLACES, project } from "../geo.js";
-import { findCountry, findCountries, personPlace } from "../places.js";
+import { findCountry, findCountries, personPlace, countryList } from "../places.js";
 
 // ---------- what the map is showing (kept while you move around the hub) ----------
 const layers = { contact: true, deal: true, person: false };
@@ -45,6 +49,35 @@ const REGIONS = [
   ["asia", "Asia-Pacific", [62, -46, 178, 54]],
 ];
 const NAME_OF_SHAPE = new Map(PLACES.filter((p) => p[4] >= 0).map((p) => [p[4], p]));
+const PLACE = new Map(PLACES.map((p) => [p[0], p]));
+
+// ---------- adding and editing from the map ----------
+const newContact = (extra) => ({ kind: "person", category: cat !== "all" ? cat : "partner", status: "In contact", ...extra });
+// Show a contact that was just added: its layer on, its country selected.
+function reveal(row) {
+  layers.contact = true;
+  if (cat !== "all" && row.category !== cat) cat = "all";
+  onlyDeal = false;
+  const place = findCountry(row.country);
+  if (place) { sel = place.code; offMap = false; flyNext = "sel"; }
+  else { sel = null; offMap = true; }
+  refresh();
+}
+const addContact = () => editRecord("contacts", null, newContact({ country: sel ? PLACE.get(sel)?.[1] || "" : "" }), reveal);
+async function addIn(name, country) {
+  layers.contact = true;
+  onlyDeal = false;
+  const row = await create("contacts", newContact({ name, country }));
+  if (row) toast(`${name} added in ${country}.`, ["Undo", () => remove("contacts", row.id)]);
+}
+function placeContact(contact, country) {
+  const before = contact.country || null;
+  update("contacts", contact.id, { country });
+  const found = findCountry(country);
+  if (found) toast(`${contact.name} is now in ${found.name}.`, ["Undo", () => update("contacts", contact.id, { country: before })]);
+  else if (country) toast(`The map doesn't know “${country}”. Try the country's English name.`);
+}
+const TABLE = { contact: "contacts", deal: "deals", person: "people" };
 const calm = () => window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
 
 const NS = "http://www.w3.org/2000/svg";
@@ -144,7 +177,8 @@ function mapPane(items) {
     s("g", { "clip-path": "url(#map-edge)" }, SHAPES.map((d, i) => {
       const code = codeOfShape.get(i);
       const n = code ? perCountry.get(code) : 0;
-      return s("path", { d, "data-i": i, class: "land" + (code ? " land--has" : "") + (code === sel && code ? " land--sel" : n >= 5 ? " land--3" : n >= 2 ? " land--2" : n === 1 ? " land--1" : "") });
+      const here = NAME_OF_SHAPE.get(i);
+      return s("path", { d, "data-i": i, class: "land" + (here ? " land--named" : "") + (code ? " land--has" : "") + (sel && here && here[0] === sel ? " land--sel" : n >= 5 ? " land--3" : n >= 2 ? " land--2" : n === 1 ? " land--1" : "") });
     })));
 
   // In each country the bubbles sit side by side (contacts, deals, team), with the country's name under them.
@@ -283,7 +317,7 @@ function mapPane(items) {
       // Not dragging: say what is under the cursor.
       const land = e.target.closest?.(".land");
       const place = land && NAME_OF_SHAPE.get(+land.dataset.i);
-      if (place) showTip(e.clientX, e.clientY, place[1], [perCountry.has(place[0]) ? summary(place[0]) : "Nobody here yet"]);
+      if (place) showTip(e.clientX, e.clientY, place[1], [perCountry.has(place[0]) ? summary(place[0]) : "Nobody here yet. Click to add."]);
       else if (!e.target.closest?.(".bubble")) hideTip();
       return;
     }
@@ -318,9 +352,10 @@ function mapPane(items) {
     drag = null;
     if (!d) return;
     if (d.moved < 5 && !d.pinch) {
-      // A click, not a drag: a country with pins is selected; anywhere else clears.
-      const land = d.target.closest?.(".land--has");
-      const code = land && codeOfShape.get(+land.dataset.i);
+      // A click, not a drag: the country is selected (empty ones too, so someone
+      // can be added there); the sea clears.
+      const land = d.target.closest?.(".land");
+      const code = land && NAME_OF_SHAPE.get(+land.dataset.i)?.[0];
       if (code) select(code);
       else if (sel) select(sel);
       return;
@@ -360,7 +395,9 @@ function mapPane(items) {
     } else if (flyNext === "region") flyTo(home);
     else if (flyNext === "sel" && sel) {
       const g = all.find((x) => x.code === sel);
+      const p = PLACE.get(sel);
       if (g) flyTo(fit(g.shape >= 0 ? shapeBox(g.shape) : [g.x - 30, g.y - 30, g.x + 30, g.y + 30], a));
+      else if (p) flyTo(fit(p[4] >= 0 ? shapeBox(p[4]) : [p[2] - 30, p[3] - 30, p[2] + 30, p[3] + 30], a));
     }
     flyNext = null;
     draw();
@@ -401,7 +438,7 @@ function listPane(items) {
   const shown = items.filter((it) =>
     (!q || it.hay.toLowerCase().includes(q)) &&
     (offMap ? it.kind === "contact" && !it.places.length : !sel || it.places.some((p) => p.code === sel)));
-  const selName = sel && items.flatMap((it) => it.places).find((p) => p.code === sel)?.name;
+  const selName = sel && PLACE.get(sel)?.[1];
   const search = h("input", { class: "input", id: "map-search", type: "search", placeholder: "Search", value: query, "aria-label": "Search the list" });
   search.addEventListener("input", () => { query = search.value; refresh(); });
   const section = (kind, title) => {
@@ -409,9 +446,13 @@ function listPane(items) {
     return rows.length > 0 && h("div", { class: "block" },
       h("div", { class: "rail__label" }, `${title} · ${rows.length}`),
       h("ul", null, rows.map((it) => {
+        const rec = byId(TABLE[kind], it.id);
         const row = h("li", { class: "arow" },
           h("button", { class: "arow__main", type: "button", onclick: it.open },
-            h("div", { class: "arow__title" }, it.name), it.meta && h("div", { class: "arow__text" }, it.meta)));
+            h("div", { class: "arow__title" }, it.name), it.meta && h("div", { class: "arow__text" }, it.meta)),
+          kind === "contact" && !it.places.length
+            ? inlineEdit({ id: "place-" + it.id, value: rec.country, placeholder: "Add country", label: `Country for ${it.name}`, list: countryList(), onSave: (v) => placeContact(rec, v) })
+            : h("button", { class: "quiet", type: "button", "aria-label": "Edit " + it.name, onclick: () => editRecord(TABLE[kind], rec) }, "Edit"));
         row.addEventListener("pointerenter", () => highlight(it.places.map((p) => p.code)));
         row.addEventListener("pointerleave", () => highlight(null));
         return row;
@@ -422,18 +463,20 @@ function listPane(items) {
     (selName || offMap) && h("div", { class: "maplist__head" },
       h("h2", { class: "h3" }, offMap ? "Not on the map" : selName),
       h("button", { class: "quiet", type: "button", onclick: () => { sel = null; offMap = false; refresh(); } }, "Clear")),
-    offMap && h("div", { class: "small muted" }, "Open a contact and add its country to place it."),
+    selName && !offMap && quickAdd("map-add", `Add a contact in ${selName}`, (name) => addIn(name, selName)),
     search,
-    parts.length ? parts : h("div", { class: "muted" }, "Nothing here."));
+    parts.length ? parts : h("div", { class: "muted" }, selName && !offMap && !q ? "Nobody here yet." : "Nothing here."));
 }
 
 export function render() {
   const items = collect();
-  if (sel && !items.some((it) => it.places.some((p) => p.code === sel))) sel = null;
+  if (sel && !PLACE.has(sel)) sel = null;
   const missing = items.filter((it) => it.kind === "contact" && !it.places.length).length;
   if (!missing) offMap = false;
   return h("main", { class: "page page--map" },
-    h("div", { class: "crumbs" }, h("a", { href: "#crm" }, "CRM"), h("span", { class: "muted" }, " / "), h("b", null, "Map")),
+    h("div", { class: "maphead" },
+      h("div", { class: "crumbs" }, h("a", { href: "#crm" }, "CRM"), h("span", { class: "muted" }, " / "), h("b", null, "Map")),
+      h("button", { class: "btn btn--primary", type: "button", onclick: addContact }, "Add contact")),
     h("div", { class: "mapgrid" }, rail(missing), mapPane(items), listPane(items)));
 }
 

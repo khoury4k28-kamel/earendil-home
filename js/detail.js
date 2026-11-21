@@ -5,7 +5,7 @@ import {
   h, avatar, kv, block, drawerFrame, openDrawer, closeDrawer, toast, inlineEdit, quickAdd,
   fmtDate, fmtDateTime, fmtRange, daysSince, todayISO, ago,
 } from "./ui.js";
-import { zonePlace, timeIn } from "./places.js";
+import { zonePlace, timeIn, countryList } from "./places.js";
 import {
   state, byId, create, update, remove, addNote, personName, teamName, sortByName,
   dealsForPerson, dealsForContact, tasksForPerson, notesFor, isOpenDeal,
@@ -14,7 +14,7 @@ import { openForm } from "./form.js";
 import { fieldsFor, NOUN, STAGES, stageLabel, categoryLabel } from "./schema.js";
 
 // ---------- add / edit any record ----------
-export function editRecord(table, record, defaults = {}) {
+export function editRecord(table, record, defaults = {}, added) {
   const noun = NOUN[table];
   const base = record || defaults;
   openForm({
@@ -22,7 +22,12 @@ export function editRecord(table, record, defaults = {}) {
     fields: fieldsFor(table, base),
     record: base,
     saveLabel: record ? "Save" : `Add ${noun}`,
-    onSave: (values) => (record ? update(table, record.id, values) : create(table, { ...defaults, ...values })),
+    onSave: async (values) => {
+      if (record) return update(table, record.id, values);
+      const row = await create(table, { ...defaults, ...values });
+      if (row && added) added(row);
+      return row;
+    },
     onDelete: record ? async () => { await remove(table, record.id); if (["people", "deals", "contacts"].includes(table)) closeDrawer(); } : null,
   });
 }
@@ -240,7 +245,7 @@ export function openContact(id) {
       kv([
         ["Email", inlineEdit({ id: `email-${id}`, value: c.email, placeholder: "Add email", label: "Email", type: "email", onSave: save("email") })],
         ["Phone", inlineEdit({ id: `phone-${id}`, value: c.phone, placeholder: "Add phone", label: "Phone", type: "tel", onSave: save("phone") })],
-        ["Country", inlineEdit({ id: `country-${id}`, value: c.country, placeholder: "Add country", label: "Country", onSave: save("country") })],
+        ["Country", inlineEdit({ id: `country-${id}`, value: c.country, placeholder: "Add country", label: "Country", list: countryList(), onSave: save("country") })],
         ["Who knows them", pickPerson({ value: c.owner_id, blank: "Nobody set", label: "Who knows them", onChange: save("owner_id") })],
         ["Last contact", contactDate("contacts", c)],
       ]),

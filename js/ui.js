@@ -128,8 +128,8 @@ export function toast(msg, action) {
   const el = document.getElementById("toast");
   const clear = () => el.replaceChildren();
   clearTimeout(toastTimer);
-  el.replaceChildren(h("span", null, msg),
-    action && h("button", { class: "toast__btn", type: "button", onclick: () => { clearTimeout(toastTimer); clear(); action[1](); } }, action[0]));
+  el.replaceChildren(...[h("span", null, msg),
+    action && h("button", { class: "toast__btn", type: "button", onclick: () => { clearTimeout(toastTimer); clear(); action[1](); } }, action[0])].filter(Boolean));
   toastTimer = setTimeout(clear, action ? 7000 : 3600);
 }
 
@@ -145,7 +145,7 @@ for (const type of ["pointerup", "pointercancel"]) window.addEventListener(type,
 
 // Text that turns into a field when clicked. Enter or clicking away saves, Esc
 // cancels. While the field is open the screen isn't redrawn underneath it.
-export function inlineEdit({ id, value, display, placeholder, label, type = "text", multiline = false, onSave }) {
+export function inlineEdit({ id, value, display, placeholder, label, type = "text", multiline = false, list, onSave }) {
   const current = value == null ? "" : String(value);
   const show = h("button", {
     class: "inline" + (current ? "" : " inline--empty") + (multiline ? " prose" : ""), type: "button", id,
@@ -156,7 +156,7 @@ export function inlineEdit({ id, value, display, placeholder, label, type = "tex
   function edit() {
     const input = h(multiline ? "textarea" : "input", {
       class: multiline ? "textarea" : "input", type: multiline ? null : type, placeholder, "aria-label": label || placeholder,
-      "data-editing": "1", autocomplete: "off", onclick: (e) => e.stopPropagation(),
+      "data-editing": "1", autocomplete: "off", list: list || null, onclick: (e) => e.stopPropagation(),
     });
     input.value = current;
     let finished = false;

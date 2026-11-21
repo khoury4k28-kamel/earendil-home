@@ -29,7 +29,7 @@ function control(f, value) {
     default:
       return h("input", {
         class: "input", id, type: f.type || "text", value: value ?? "", placeholder: f.placeholder,
-        step: f.type === "number" ? "any" : null, autocomplete: "off",
+        step: f.type === "number" ? "any" : null, autocomplete: "off", list: f.list ? f.list() : null,
       });
   }
 }

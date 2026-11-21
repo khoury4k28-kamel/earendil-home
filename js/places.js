@@ -13,6 +13,19 @@ const NAMES = PLACES.flatMap((p) => [p[1], ...(p[5] ? p[5].split("|") : [])].map
 const asPlace = (p) => p && { code: p[0], name: p[1], x: p[2], y: p[3], shape: p[4] };
 const BY_CODE = new Map(PLACES.map((p) => [p[0], p]));
 
+// Country names offered as you type a country. Returns the id to put in an
+// input's "list"; the list itself is added to the page once.
+export function countryList() {
+  const id = "country-names";
+  if (!document.getElementById(id)) {
+    const list = document.createElement("datalist");
+    list.id = id;
+    for (const name of PLACES.map((p) => p[1]).sort()) list.append(Object.assign(document.createElement("option"), { value: name }));
+    document.body.append(list);
+  }
+  return id;
+}
+
 // The country named in a piece of text ("Athens, Greece", "USA"), if any.
 export function findCountry(text) {
   const t = " " + norm(text) + " ";

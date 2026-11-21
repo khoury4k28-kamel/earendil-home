@@ -268,8 +268,10 @@ function tasks(rest, snoozedCount) {
       toggle),
     shown.length > 0 && taskRows(shown),
     moreBtn(items.length - shown.length, showAll, () => { showAll = !showAll; refresh(); }),
-    // A to-do added here is yours. With nobody signed in it is the company's.
-    quickAdd("quick-todo", "Add a to-do", (title) => create("tasks", { title, status: "todo", company_wide: !meId(), owner_id: meId() || null })));
+    // A to-do added under "Mine" is yours. Under "Everyone" (or with nobody
+    // signed in) it has no owner yet, so anyone can take it.
+    quickAdd("quick-todo", which === "mine" ? "Add a to-do for me" : "Add a to-do for anyone",
+      (title) => create("tasks", { title, status: "todo", company_wide: which !== "mine", owner_id: which === "mine" ? meId() : null })));
 }
 
 // ---------- your deals ----------

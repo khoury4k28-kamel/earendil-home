@@ -502,7 +502,10 @@ button.arow__main:hover .rrow__title { text-decoration: underline; text-underlin
 .crumbs b { font-weight: 650; }
 .crumbs--page { font-size: 22px; letter-spacing: -0.02em; }
 .page--map { padding: 0; max-width: none; gap: 0; height: 100vh; display: grid; grid-template-rows: auto minmax(0, 1fr); }
-.page--map > .crumbs { padding: 17px 24px; border-bottom: 1px solid var(--line); }
+.maphead { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 24px; border-bottom: 1px solid var(--line); }
+.maplist .quickadd { border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; }
+.maplist .arow .inline { flex: none; max-width: 46%; }
+.maplist .arow > .input { flex: 0 1 46%; min-width: 0; }
 .mapgrid { display: grid; grid-template-columns: 286px minmax(0, 1fr) 316px; min-height: 0; }
 .rail { padding: 22px 20px 40px; overflow-y: auto; display: flex; flex-direction: column; gap: 26px; }
 .rail__group { display: flex; flex-direction: column; gap: 10px; }
@@ -513,7 +516,7 @@ button.arow__main:hover .rrow__title { text-decoration: underline; text-underlin
 .land { fill: #E9E9E9; stroke: #FFFFFF; stroke-width: 0.6; vector-effect: non-scaling-stroke; }
 .land { transition: fill 0.18s; }
 .land:hover { fill: #DEDEDE; }
-.land--has { cursor: pointer; }
+.land--named { cursor: pointer; }
 .land--1 { fill: #DADADA; } .land--2 { fill: #CBCBCB; } .land--3 { fill: #B9B9B9; } .land--sel { fill: #A2A2A2; }
 .bubble { position: absolute; transform: translate(-50%, -50%); border-radius: 50%; display: grid; place-items: center; font-size: 12px; font-weight: 600; line-height: 1; background: var(--ink); color: #fff; box-shadow: 0 0 0 2px #fff; font-variant-numeric: tabular-nums; }
 .bubble--deal { background: #fff; color: var(--ink); box-shadow: inset 0 0 0 2px var(--ink), 0 0 0 2px #fff; }
@@ -537,7 +540,7 @@ button.arow__main:hover .rrow__title { text-decoration: underline; text-underlin
   .rail { padding: 18px var(--gutter); gap: 18px; overflow: visible; }
   .map { height: 58vh; }
   .maplist { border-left: 0; overflow: visible; padding: 20px var(--gutter) 60px; }
-  .page--map > .crumbs { padding: 14px var(--gutter); }
+  .maphead { padding: 10px var(--gutter); }
 }
 
 /* ---------- the map, in motion ---------- */

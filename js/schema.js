@@ -2,6 +2,7 @@
 // the fields its edit form shows.
 
 import { state, sortByName } from "./store.js";
+import { countryList } from "./places.js";
 
 export const STAGES = [
   { value: "lead", label: "Lead" },
@@ -105,7 +106,7 @@ export function fieldsFor(table, record = {}) {
       { key: "status", label: "Status", type: "select", required: true, options: CONTACT_STATUS },
       { key: "email", label: "Email", type: "email" },
       { key: "phone", label: "Phone", type: "tel" },
-      { key: "country", label: "Country" },
+      { key: "country", label: "Country", list: countryList },
       { key: "owner_id", label: "Who knows them", type: "select", options: people(), blank: "Nobody set" },
       { key: "last_touch", label: "Last contact", type: "date" },
       { key: "notes", label: "Notes", type: "textarea" },
