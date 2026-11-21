@@ -110,8 +110,8 @@ function readSession() {
 
 function gate({ connected, message, signedInAs, signIn, note }) {
   const error = h("div", { class: "form-error", hidden: !message }, message || "");
-  const email = h("input", { class: "input", id: "gate-email", type: "email", autocomplete: "username", required: true, placeholder: "initials@" + config.emailDomain });
-  const password = h("input", { class: "input", id: "gate-password", type: "password", autocomplete: "current-password", required: true });
+  const email = h("input", { class: "input", id: "gate-email", type: "email", autocomplete: "username", required: true, placeholder: "Email" });
+  const password = h("input", { class: "input", id: "gate-password", type: "password", autocomplete: "current-password", required: true, placeholder: "Password" });
   const button = h("button", { class: "btn btn--primary", type: "submit" }, "Sign in");
   const form = h("form", { class: "block" },
     h("div", { class: "field" }, h("label", { class: "field__label", for: "gate-email" }, "Earendil email"), email),
