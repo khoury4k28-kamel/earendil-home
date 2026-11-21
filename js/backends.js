@@ -3,7 +3,7 @@
 
 import { TABLES } from "./store.js";
 
-const EMPTY = { settings: {}, people: [], teams: [], goals: [], milestones: [], tasks: [], deals: [], contacts: [], activity: [] };
+const EMPTY = { settings: {}, people: [], teams: [], goals: [], milestones: [], tasks: [], projects: [], deals: [], contacts: [], activity: [] };
 
 // Local preview: reads the private seed file. Nothing is saved.
 async function optional(url) {

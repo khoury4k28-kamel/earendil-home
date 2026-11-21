@@ -26,14 +26,17 @@ export const CATEGORIES = [
 export const categoryLabel = (v) => CATEGORIES.find((c) => c.value === v)?.label || "";
 
 export const CONTACT_STATUS = ["In contact", "Target", "To confirm"].map((v) => ({ value: v, label: v }));
+export const PROJECT_STATUS = [{ value: "active", label: "Active" }, { value: "paused", label: "On hold" }, { value: "done", label: "Done" }];
+export const projectStatusLabel = (v) => PROJECT_STATUS.find((s) => s.value === v)?.label || "Active";
 export const TASK_STATUS = [{ value: "todo", label: "To do" }, { value: "doing", label: "In progress" }, { value: "done", label: "Done" }];
 export const SOURCES = ["Slack", "Email", "Granola"];
 
-export const NOUN = { people: "person", teams: "team", goals: "target", milestones: "milestone", tasks: "task", deals: "deal", contacts: "contact" };
+export const NOUN = { people: "person", teams: "team", goals: "target", milestones: "milestone", tasks: "task", projects: "project", deals: "deal", contacts: "contact" };
 
 const people = () => sortByName(state.people).map((p) => ({ value: p.id, label: p.name }));
 const teams = () => sortByName(state.teams).map((t) => ({ value: t.id, label: t.name }));
 const deals = () => sortByName(state.deals).map((d) => ({ value: d.id, label: d.name }));
+const projects = () => sortByName(state.projects).map((p) => ({ value: p.id, label: p.name }));
 const contacts = () => sortByName(state.contacts).map((c) => ({ value: c.id, label: c.organisation && c.organisation !== c.name ? `${c.name} (${c.organisation})` : c.name }));
 
 export function fieldsFor(table, record = {}) {
@@ -76,9 +79,19 @@ export function fieldsFor(table, record = {}) {
       { key: "owner_id", label: "Owner", type: "select", options: people(), blank: "Nobody yet" },
       { key: "status", label: "Status", type: "select", required: true, options: TASK_STATUS },
       { key: "due", label: "Due", type: "date" },
+      { key: "project_id", label: "Project", type: "select", options: projects(), blank: "No project (a quick to-do)" },
       { key: "team_id", label: "Team", type: "select", options: teams(), blank: "No team" },
       { key: "deal_id", label: "Deal", type: "select", options: deals(), blank: "No deal" },
       { key: "company_wide", type: "checkbox", label: "Company-wide", checkLabel: "Show on Home as a company-wide to-do" },
+    ];
+    case "projects": return [
+      { key: "name", label: "Project", required: true, wide: true },
+      { key: "owner_id", label: "Owner", type: "select", options: people(), blank: "Nobody yet" },
+      { key: "status", label: "Status", type: "select", required: true, options: PROJECT_STATUS },
+      { key: "due", label: "Due", type: "date" },
+      { key: "deal_id", label: "About a deal", type: "select", options: deals(), blank: "No deal" },
+      { key: "people_ids", label: "Who's on it", type: "multi", options: people(), none: "Add people on the People tab first." },
+      { key: "summary", label: "What it's for", type: "textarea" },
     ];
     case "deals": return [
       { key: "name", label: "Deal name", required: true },

@@ -3,13 +3,13 @@
 
 import { toast } from "./ui.js";
 
-export const TABLES = ["people", "teams", "goals", "milestones", "tasks", "deals", "contacts", "activity"];
+export const TABLES = ["people", "teams", "goals", "milestones", "tasks", "projects", "deals", "contacts", "activity"];
 
 export const state = {
   mode: null,          // "preview" | "live"
   me: { id: null, email: null, name: null, label: "" },
   settings: {},
-  people: [], teams: [], goals: [], milestones: [], tasks: [], deals: [], contacts: [], activity: [],
+  people: [], teams: [], goals: [], milestones: [], tasks: [], projects: [], deals: [], contacts: [], activity: [],
   documents: [], documentsBase: "", documentsUpdated: null,   // decks and materials (read-only here)
   radar: null, radarBase: "",                                  // { updated, items }: the week's headlines, and where their pictures are
 };
@@ -179,6 +179,9 @@ export const isOpenDeal = (d) => d.stage !== "signed" && d.stage !== "closed";
 export const dealsForPerson = (id) => state.deals.filter((d) => d.owner_id === id || (d.people_ids || []).includes(id));
 export const dealsForContact = (id) => state.deals.filter((d) => (d.contact_ids || []).includes(id));
 export const tasksForPerson = (id) => state.tasks.filter((t) => t.owner_id === id);
+export const tasksForProject = (id) => state.tasks.filter((t) => t.project_id === id);
+export const projectsForPerson = (id) => state.projects.filter((p) => p.owner_id === id || (p.people_ids || []).includes(id));
+export const projectsForDeal = (id) => state.projects.filter((p) => p.deal_id === id);
 export const notesFor = (type, id) => state.activity
   .filter((a) => a.entity_type === type && a.entity_id === id)
   .sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)));

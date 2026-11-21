@@ -20,7 +20,7 @@ import { state, saveSetting, isOpenDeal, create, update, byId, personName, setVi
 import { openForm } from "../form.js";
 import {
   editRecord, openDeal, openPerson, openContact, dealIssues, stalledDays, pickPerson,
-  logContact, takeDeal, finishTask, clearToConfirm,
+  logContact, takeDeal, finishTask, clearToConfirm, openProject, projectProgress, progressBar,
 } from "../detail.js";
 import { stageLabel } from "../schema.js";
 import { findCountry, findCountries, personPlace } from "../places.js";
@@ -31,6 +31,9 @@ let scope = null;        // "mine" | "all"; null = decide from who is signed in
 let openTidy = null;     // which "Tidy up" row is open
 let tidyAll = false;
 let grabsAll = false;
+let projectsAll = false;
+let projectsDone = false;   // also list finished projects
+const PROJECT_LIMIT = 5;
 let radarAll = false;
 const RADAR_LIMIT = 6;
 const TASK_LIMIT = 5;
@@ -163,12 +166,16 @@ function workItems() {
     const soon = left != null && left <= 7;
     const belongs = taskBelongs(t);
     const edit = () => editRecord("tasks", t);
+    // A task inside a project is listed under its project. It only competes
+    // for Today when it is overdue or due this week.
+    const project = byId("projects", t.project_id);
+    if (project && (project.status !== "active" || !(overdue || soon))) continue;
     items.push({
-      key: "task:" + t.id, type: "task", belongs, title: t.title, open: edit, tick: () => finishTask(t),
+      key: "task:" + t.id, type: "task", belongs, title: t.title, open: edit, tick: () => finishTask(t), inProject: Boolean(project),
       score: overdue ? 100 + Math.min(30, daysSince(t.due)) : soon ? 70 - left : 55,
       action: belongs === "open" ? (meId() ? ["Take it", () => takeTask(t)] : ["Assign", edit]) : ["Done", () => finishTask(t)],
       meta: [belongs !== "mine" && personName(t.owner_id), overdue ? red(`Overdue since ${fmtDate(t.due)}`) : t.due && `Due ${fmtDate(t.due)}`,
-        t.status === "doing" && "In progress", byId("deals", t.deal_id)?.name],
+        t.status === "doing" && "In progress", project?.name, byId("deals", t.deal_id)?.name],
     });
   }
   for (const d of state.deals) {
@@ -274,6 +281,42 @@ function tasks(rest, snoozedCount) {
       (title) => create("tasks", { title, status: "todo", company_wide: which !== "mine", owner_id: which === "mine" ? meId() : null })));
 }
 
+// ---------- projects: longer work, each with its own tasks ----------
+const onProject = (p) => Boolean(meId() && (p.owner_id === meId() || (p.people_ids || []).includes(meId())));
+async function addProject(name, mine) {
+  const row = await create("projects", { name, status: "active", owner_id: mine ? meId() : null, people_ids: [], deal_id: null, summary: null, due: null });
+  if (row) openProject(row.id);   // straight to its panel, ready for its first tasks
+}
+function projects() {
+  const mineOnly = Boolean(meId()) && (scope || "mine") === "mine";
+  const pool = state.projects.filter((p) => !mineOnly || onProject(p));
+  const done = pool.filter((p) => p.status === "done");
+  const rank = { active: 0, paused: 1, done: 2 };
+  const list = pool.filter((p) => projectsDone || p.status !== "done")
+    .sort((a, b) => (rank[a.status] ?? 0) - (rank[b.status] ?? 0) || String(a.due || "9").localeCompare(String(b.due || "9")) || a.name.localeCompare(b.name));
+  const shown = projectsAll ? list : list.slice(0, PROJECT_LIMIT);
+  const today = todayISO();
+  return section(`${mineOnly ? "Your projects" : "Projects"} · ${list.length}`,
+    done.length > 0 && h("button", { class: "more more--head", type: "button", onclick: () => { projectsDone = !projectsDone; refresh(); } },
+      projectsDone ? "Hide finished" : `${done.length} finished · Show`),
+    shown.length > 0 && h("ul", null, shown.map((p) => {
+      const { total, done: n, next } = projectProgress(p);
+      const late = p.status === "active" && p.due && p.due < today;
+      return h("li", { class: "arow prow" + (p.status === "done" ? " done" : "") },
+        h("button", { class: "arow__main", type: "button", onclick: () => openProject(p.id) },
+          h("div", { class: "arow__title" }, p.name),
+          h("div", { class: "arow__text" }, dots([
+            p.status === "paused" && "On hold", p.status === "done" && "Finished",
+            !onProject(p) && personName(p.owner_id),
+            p.status !== "done" && (next ? `Next: ${next.title}` : total ? "All tasks done" : "No tasks yet"),
+            late ? red(`Due ${fmtDate(p.due)}`) : p.due && p.status !== "done" && `Due ${fmtDate(p.due)}`]))),
+        total > 0 && h("span", { class: "prow__n num" }, `${n}/${total}`),
+        progressBar(n, total));
+    })),
+    moreBtn(list.length - shown.length, projectsAll, () => { projectsAll = !projectsAll; refresh(); }),
+    quickAdd("quick-project", mineOnly ? "Add a project for me" : "Add a project", (name) => addProject(name, mineOnly)));
+}
+
 // ---------- your deals ----------
 function myDeals() {
   if (!meId()) return null;
@@ -325,8 +368,8 @@ function changes() {
   if (!from) return null;
   const myEmail = (state.me.email || "").toLowerCase();
   const who = (email) => state.people.find((p) => (p.email || "").toLowerCase() === String(email || "").toLowerCase())?.name || String(email || "").split("@")[0];
-  const kinds = { deal: ["deals", openDeal], person: ["people", openPerson], contact: ["contacts", openContact] };
-  const isMine = (type, rec) => (type === "deal" ? onDeal(rec) : type === "task" ? rec.owner_id === meId() : type === "contact" ? rec.owner_id === meId() : false) && Boolean(meId());
+  const kinds = { deal: ["deals", openDeal], person: ["people", openPerson], contact: ["contacts", openContact], project: ["projects", openProject] };
+  const isMine = (type, rec) => (type === "deal" ? onDeal(rec) : type === "project" ? onProject(rec) : type === "task" ? rec.owner_id === meId() : type === "contact" ? rec.owner_id === meId() : false) && Boolean(meId());
   const rows = [];
   const seen = new Set();
   for (const a of state.activity) {
@@ -338,7 +381,7 @@ function changes() {
     seen.add(a.entity_type + ":" + a.entity_id);
     rows.push({ at: a.created_at, mine: isMine(a.entity_type, rec), title: rec.name, text: a.body, by: a.author, open: () => kind[1](rec.id) });
   }
-  const tables = [["deals", "deal", (r) => openDeal(r.id), "Deal"], ["contacts", "contact", (r) => openContact(r.id), "Contact"],
+  const tables = [["deals", "deal", (r) => openDeal(r.id), "Deal"], ["projects", "project", (r) => openProject(r.id), "Project"], ["contacts", "contact", (r) => openContact(r.id), "Contact"],
     ["tasks", "task", (r) => editRecord("tasks", r), "Task"], ["milestones", "date", (r) => editRecord("milestones", r), "Date"]];
   for (const [table, type, open, noun] of tables) for (const r of state[table]) {
     if (!r.updated_at || String(r.updated_at) <= from || seen.has(type + ":" + r.id)) continue;
@@ -517,7 +560,8 @@ export function render() {
   const all = workItems();
   const top = topThree(all);
   const picked = new Set(top.map((it) => it.key));
-  const rest = all.filter((it) => !picked.has(it.key) && it.type !== "date");
+  // Quick to-dos and deal follow-ups; tasks inside a project sit under the project.
+  const rest = all.filter((it) => !picked.has(it.key) && it.type !== "date" && !it.inProject);
   const hiddenCount = Object.keys(snoozed()).length;
   const mission = state.settings.mission;
   const news = radar();
@@ -525,7 +569,7 @@ export function render() {
     h("div", { class: "home__head page-head__text" }, h("h1", { class: "h1" }, greeting()), pulse(), yourUpdate()),
     h("div", { class: "home__main" },
       claim(),
-      today(top), tasks(rest, hiddenCount), myDeals(), upForGrabs(rest), changes(), goals(),
+      today(top), tasks(rest, hiddenCount), projects(), myDeals(), upForGrabs(rest), changes(), goals(),
       comingUp(new Set(top.filter((it) => it.type === "date").map((it) => it.id))), team(), tidy(),
       h("button", { class: "missionline", type: "button", onclick: openAbout, title: "Mission, values and what we sell" }, (mission || "Write the mission") + " →")),
     news);

@@ -3,8 +3,8 @@
 
 import { h } from "./ui.js";
 import { state } from "./store.js";
-import { editRecord, openDeal, openContact, openPerson } from "./detail.js";
-import { stageLabel, categoryLabel } from "./schema.js";
+import { editRecord, openDeal, openContact, openPerson, openProject } from "./detail.js";
+import { stageLabel, categoryLabel, projectStatusLabel } from "./schema.js";
 
 let open = false;
 
@@ -13,6 +13,7 @@ function items(extra) {
     ["New deal", () => editRecord("deals", null, { stage: "lead", kind: "customer", people_ids: [], contact_ids: [] })],
     ["New contact", () => editRecord("contacts", null, { kind: "person", category: "partner", status: "In contact" })],
     ["New task", () => editRecord("tasks", null, { status: "todo", owner_id: state.me.id || null })],
+    ["New project", () => editRecord("projects", null, { status: "active", owner_id: state.me.id || null, people_ids: [] }, (row) => openProject(row.id))],
     ["New person", () => editRecord("people", null)],
     ["New team", () => editRecord("teams", null)],
     ["New milestone", () => editRecord("milestones", null, { status: "upcoming", kind: "company" })],
@@ -22,6 +23,7 @@ function items(extra) {
     .map(([label, id]) => ({ group: "Go to", label, sub: "", run: () => { location.hash = id; } }));
   const records = [
     ...state.deals.map((d) => ({ group: "Deals", label: d.name, sub: [stageLabel(d.stage), d.organisation].filter(Boolean).join(" · "), run: () => openDeal(d.id) })),
+    ...state.projects.map((p) => ({ group: "Projects", label: p.name, sub: projectStatusLabel(p.status), run: () => openProject(p.id) })),
     ...state.contacts.map((c) => ({ group: "Contacts", label: c.name, sub: [categoryLabel(c.category), c.organisation !== c.name && c.organisation].filter(Boolean).join(" · "), run: () => openContact(c.id) })),
     ...state.people.map((p) => ({ group: "People", label: p.name, sub: p.title || "", run: () => openPerson(p.id) })),
     ...state.documents.map((d) => ({ group: "Documents", label: d.title, sub: [d.category, d.kind].join(" · "), run: () => window.open(state.documentsBase + d.file, "_blank", "noopener") })),

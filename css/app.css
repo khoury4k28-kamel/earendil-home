@@ -229,6 +229,13 @@ button.card:hover, a.card:hover { border-color: var(--ink); }
 .seg button[aria-pressed="true"], .stage-pick button[aria-pressed="true"] { background: var(--bg); color: var(--ink); font-weight: 600; box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08); }
 .stage-pick { display: grid; grid-template-columns: repeat(5, 1fr); }
 .stage-pick button { padding: 7px 4px; font-size: 13px; }
+.stage-pick--3 { grid-template-columns: repeat(3, 1fr); }
+/* How far along a project is. */
+.bar { flex: none; display: inline-block; width: 64px; height: 6px; border-radius: 3px; background: var(--soft-2); overflow: hidden; }
+.bar > span { display: block; height: 100%; border-radius: 3px; background: var(--ink); }
+.drawer .bar { display: block; width: 100%; }
+.prow__n { flex: none; font-size: 13px; color: var(--muted); }
+.prow.done .arow__title { color: var(--muted); }
 
 /* deals board */
 .board-wrap { overflow-x: auto; margin: 0 calc(var(--gutter) * -1); padding: 0 var(--gutter) 6px; }

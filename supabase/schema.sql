@@ -99,10 +99,29 @@ create table if not exists public.milestones (
 create table if not exists public.tasks (
   id text primary key default gen_random_uuid()::text,
   title text not null,
-  owner_id text, team_id text, deal_id text,
+  owner_id text, team_id text, deal_id text, project_id text,
   status text not null default 'todo',
   due date,
   company_wide boolean not null default false,
+  source text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  updated_by text
+);
+
+-- A task belongs to a project, or to none (a quick to-do).
+alter table public.tasks add column if not exists project_id text;
+
+-- Longer pieces of work, each with its own tasks. A project may be about a deal.
+create table if not exists public.projects (
+  id text primary key default gen_random_uuid()::text,
+  name text not null,
+  summary text,
+  owner_id text,
+  people_ids text[] not null default '{}',
+  deal_id text,
+  status text not null default 'active',
+  due date,
   source text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
@@ -165,7 +184,7 @@ $$;
 do $$
 declare t text;
 begin
-  foreach t in array array['settings','people','teams','goals','milestones','tasks','deals','contacts','activity'] loop
+  foreach t in array array['settings','people','teams','goals','milestones','tasks','projects','deals','contacts','activity'] loop
     execute format('drop trigger if exists touch on public.%I', t);
     execute format('create trigger touch before insert or update on public.%I for each row execute function public.touch_row()', t);
   end loop;
@@ -208,7 +227,7 @@ create policy "members can see the team list" on public.members
 do $$
 declare t text;
 begin
-  foreach t in array array['settings','people','teams','goals','milestones','tasks','deals','contacts','activity'] loop
+  foreach t in array array['settings','people','teams','goals','milestones','tasks','projects','deals','contacts','activity'] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('revoke all on public.%I from anon', t);
     execute format('grant select, insert, update, delete on public.%I to authenticated', t);
@@ -228,7 +247,7 @@ end $$;
 do $$
 declare t text;
 begin
-  foreach t in array array['settings','people','teams','goals','milestones','tasks','deals','contacts','activity'] loop
+  foreach t in array array['settings','people','teams','goals','milestones','tasks','projects','deals','contacts','activity'] loop
     begin
       execute format('alter publication supabase_realtime add table public.%I', t);
     exception when duplicate_object then null;
