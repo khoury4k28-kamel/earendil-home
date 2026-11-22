@@ -4,7 +4,7 @@
 //   2. What should I do next?       -> Tasks: to-dos and deal follow-ups, mine first
 //   3. What changed while I was out -> Since your last visit
 //   4. What is coming?              -> Coming up
-//   5. Who is on what, and where?   -> Team
+// Who is on what, and where, is on the Teams tab.
 // Down the right side runs the Radar: the week's outside news that bears on
 // the business, with the viewer's own markets first.
 // "Mine" means: a to-do I own, a deal I own or am on. Things that belong to a
@@ -427,22 +427,6 @@ function comingUp(skip) {
     moreDates && done.length > 0 && h("details", { class: "past" }, h("summary", null, `${done.length} done`), milestoneRows(done)));
 }
 
-// ---------- 5. team: everyone else ----------
-function team() {
-  const others = state.people.filter((p) => p.id !== meId()).sort((a, b) => a.name.localeCompare(b.name));
-  if (!others.length) return null;
-  return section("Team", h("a", { class: "link small", href: "#teams" }, "All"),
-    h("ul", null, others.map((p) => {
-      const place = personPlace(p);
-      return h("li", { class: "arow" },
-        avatar(p.name, "s"),
-        h("button", { class: "arow__main", type: "button", onclick: () => openPerson(p.id) },
-          h("div", { class: "arow__title" }, p.name),
-          h("div", { class: "arow__text" }, p.focus || "No update yet")),
-        place.text && h("span", { class: "days" }, place.text));
-    })));
-}
-
 // ---------- tidy up: missing details, fixed in place ----------
 // Signed in, this is about your own records and the ones nobody owns. A
 // teammate's gaps are on their page.
@@ -584,7 +568,7 @@ export function render() {
     h("div", { class: "home__main" },
       claim(),
       today(top), tasks(rest, hiddenCount), work(), upForGrabs(rest), changes(), goals(),
-      comingUp(new Set(top.filter((it) => it.type === "date").map((it) => it.id))), team(), tidy(),
+      comingUp(new Set(top.filter((it) => it.type === "date").map((it) => it.id))), tidy(),
       h("button", { class: "missionline", type: "button", onclick: openAbout, title: "Mission, values and what we sell" }, (mission || "Write the mission") + " →")),
     news);
 }
