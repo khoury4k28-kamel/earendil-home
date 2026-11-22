@@ -128,6 +128,8 @@ create table if not exists public.tasks (
 
 -- A task belongs to a project, or to none (a quick to-do).
 alter table public.tasks add column if not exists project_id text;
+-- A subtask sits under another task and goes when that task is deleted.
+alter table public.tasks add column if not exists parent_id text references public.tasks(id) on delete cascade;
 
 -- Longer pieces of work, each with its own tasks. A project may be about a deal.
 create table if not exists public.projects (
@@ -160,6 +162,9 @@ create table if not exists public.deals (
   updated_at timestamptz not null default now(),
   updated_by text
 );
+
+-- Documents linked to a deal by hand (the deal page also finds some by name).
+alter table public.deals add column if not exists document_ids text[] not null default '{}';
 
 create table if not exists public.contacts (
   id text primary key default gen_random_uuid()::text,

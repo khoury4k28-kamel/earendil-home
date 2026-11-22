@@ -79,7 +79,7 @@ export function fieldsFor(table, record = {}) {
       { key: "owner_id", label: "Owner", type: "select", options: people(), blank: "Nobody yet" },
       { key: "status", label: "Status", type: "select", required: true, options: TASK_STATUS },
       { key: "due", label: "Due", type: "date" },
-      { key: "belongs", label: "Belongs to", type: "select", blank: "Nothing (a quick to-do)", groups: [
+      { key: "belongs", label: "Belongs to", type: "select", blank: "No deal or project", groups: [
         { label: "Deals", options: deals().map((o) => ({ value: "deal:" + o.value, label: o.label })) },
         { label: "Projects", options: projects().map((o) => ({ value: "project:" + o.value, label: o.label })) },
       ] },

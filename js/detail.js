@@ -197,7 +197,7 @@ export function workTag(task) {
   const w = workOf(task);
   if (!w) return null;
   return h("button", { class: "wtag", type: "button", title: (w.kind === "deal" ? "Deal: " : "Project: ") + w.name,
-    onclick: (e) => { e.stopPropagation(); openWork(w.kind, w.id); } }, workMark(w), h("span", null, w.name));
+    onclick: (e) => { e.stopPropagation(); location.hash = `#work/${w.kind}:${w.id}`; } }, workMark(w), h("span", null, w.name));
 }
 export function workRows(list) {
   return h("ul", { class: "rows" }, [...list].sort((a, b) => a.name.localeCompare(b.name)).map((w) => h("li", { class: "row" },

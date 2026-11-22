@@ -32,7 +32,6 @@ let scope = null;        // "mine" | "all"; null = decide from who is signed in
 let openTidy = null;     // which "Tidy up" row is open
 let tidyAll = false;
 let grabsAll = false;
-let what = "all";        // tasks shown: "all", or "quick" for the ones that belong to nothing
 let workAll = false;
 let workDone = false;    // also list finished projects
 const WORK_LIMIT = 6;
@@ -166,6 +165,9 @@ function taskBelongs(t) {
 // ---------- everything that could need a person, each with a score ----------
 // Higher scores are more pressing. What is mine counts for more; a teammate's
 // work is theirs to see first.
+// Home only gathers. Pressing a task or a deal goes to its page on Deals &
+// Tasks, which is where things are added and changed.
+const toWork = (kind, id) => { location.hash = `#work/${kind}:${id}`; };
 function workItems() {
   const today = todayISO();
   const items = [];
@@ -181,7 +183,7 @@ function workItems() {
     const w = workOf(t);
     if (w && !isActive(w.kind, w.rec)) continue;
     items.push({
-      key: "task:" + t.id, type: "task", belongs, title: t.title, open: edit, tick: () => finishTask(t),
+      key: "task:" + t.id, type: "task", belongs, title: t.title, open: w ? () => toWork(w.kind, w.id) : edit, tick: () => finishTask(t),
       quick: !w, tag: workTag(t), workName: w?.name,
       score: overdue ? 100 + Math.min(30, daysSince(t.due)) : soon ? 70 - left : 55,
       action: belongs === "open" ? (meId() ? ["Take it", () => takeTask(t)] : ["Assign", edit]) : ["Done", () => finishTask(t)],
@@ -194,7 +196,7 @@ function workItems() {
     const quiet = stalledDays(d);
     if (!quiet && nextStep(d)) continue;
     const belongs = dealBelongs(d);
-    const base = { type: "deal", belongs, open: () => openDeal(d.id) };
+    const base = { type: "deal", belongs, open: () => toWork("deal", d.id) };
     const about = [d.organisation !== d.name && d.organisation, stageLabel(d.stage), belongs !== "mine" && personName(d.owner_id)];
     if (quiet) {
       items.push({ ...base, key: `deal:${d.id}:stalled`, score: 90 + Math.min(9, quiet / 10), title: `Follow up on ${d.name}`,
@@ -278,8 +280,8 @@ function taskRows(items) {
     it.action && it.action[0] !== "Done" && h("button", { class: "btn", type: "button", onclick: it.action[1] }, it.action[0]),
     h("button", { class: "quiet", type: "button", "aria-label": "Snooze: " + it.title, onclick: () => snooze(it.key) }, "Snooze"))));
 }
-// Two switches: whose tasks (Mine / Everyone) and which (All, or only the
-// quick to-dos that belong to no deal or project).
+// One switch: whose tasks (Mine / Everyone). Tasks are added on Deals & Tasks,
+// inside their deal or project.
 function seg(label, options, current, set) {
   return h("div", { class: "seg seg--small", role: "group", "aria-label": label }, options.map(([value, text]) =>
     h("button", { type: "button", "aria-pressed": String(current === value), onclick: () => { set(value); refresh(); } }, text)));
@@ -288,29 +290,20 @@ function tasks(rest, snoozedCount) {
   const mine = rest.filter((it) => it.belongs === "mine");
   const whose = meId() ? scope || "mine" : "all";
   const pool = whose === "mine" ? mine : rest;
-  const quick = pool.filter((it) => it.type === "task" && it.quick);
-  const items = what === "quick" ? quick : pool;
+  const items = pool;
   const shown = showAll ? items : items.slice(0, TASK_LIMIT);
   return section(`${whose === "mine" ? "Your tasks" : "Tasks"} · ${items.length}`,
     h("div", { class: "actions" },
       snoozedCount > 0 && h("button", { class: "more more--head", type: "button", onclick: () => setSnoozed({}) }, `${snoozedCount} snoozed · Show`),
-      seg("Which tasks", [["all", `All ${pool.length}`], ["quick", `Quick ${quick.length}`]], what, (v) => { what = v; }),
+      h("a", { class: "link small", href: "#work" }, "All"),
       meId() && seg("Whose tasks", [["mine", `Mine ${mine.length}`], ["all", `Everyone ${rest.length}`]], whose, (v) => { scope = v; })),
     shown.length > 0 && taskRows(shown),
-    moreBtn(items.length - shown.length, showAll, () => { showAll = !showAll; refresh(); }),
-    // The box adds a quick to-do. Under "Mine" it is yours; under "Everyone"
-    // (or with nobody signed in) it has no owner yet, so anyone can take it.
-    quickAdd("quick-todo", whose === "mine" ? "Add a to-do for me" : "Add a to-do for anyone",
-      (title) => create("tasks", { title, status: "todo", company_wide: whose !== "mine", owner_id: whose === "mine" ? meId() : null })));
+    moreBtn(items.length - shown.length, showAll, () => { showAll = !showAll; refresh(); }));
 }
 
 // ---------- deals and projects: one list ----------
 // A deal is a project with a pipeline, so they sit together: each row has its
 // progress and the task to do next.
-async function addProject(name, mine) {
-  const row = await create("projects", { name, status: "active", owner_id: mine ? meId() : null, people_ids: [], deal_id: null, summary: null, due: null });
-  if (row) openProject(row.id);   // straight to its panel, ready for its first tasks
-}
 function work() {
   const mineOnly = Boolean(meId()) && (scope || "mine") === "mine";
   const pool = allWork().filter((w) => !mineOnly || isOn(w.rec, meId()));
@@ -327,7 +320,7 @@ function work() {
     h("div", { class: "actions" },
       finished.length > 0 && h("button", { class: "more more--head", type: "button", onclick: () => { workDone = !workDone; refresh(); } },
         workDone ? "Hide finished" : `${finished.length} finished · Show`),
-      state.deals.length > 0 && h("a", { class: "link small", href: "#deals" }, "All deals")),
+      h("a", { class: "link small", href: "#work" }, "All")),
     shown.length > 0 && h("ul", null, shown.map((w) => {
       const r = w.rec;
       const done = rank(w) === 2;
@@ -335,7 +328,7 @@ function work() {
       const late = w.kind === "project" && r.status === "active" && r.due && r.due < today;
       return h("li", { class: "arow wrow" + (done ? " done" : "") },
         workMark(w),
-        h("button", { class: "arow__main", type: "button", onclick: () => openWork(w.kind, w.id) },
+        h("button", { class: "arow__main", type: "button", onclick: () => toWork(w.kind, w.id) },
           h("div", { class: "arow__title" }, w.name),
           h("div", { class: "arow__text" }, dots([
             rank(w) === 1 && "On hold", done && "Finished",
@@ -346,8 +339,7 @@ function work() {
         w.total > 0 && h("span", { class: "prow__n num" }, `${w.done}/${w.total}`),
         progressBar(w.done, w.total));
     })),
-    moreBtn(list.length - shown.length, workAll, () => { workAll = !workAll; refresh(); }),
-    quickAdd("quick-project", mineOnly ? "Add a project for me" : "Add a project", (title) => addProject(title, mineOnly)));
+    moreBtn(list.length - shown.length, workAll, () => { workAll = !workAll; refresh(); }));
 }
 
 function takeProject(p) {

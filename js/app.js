@@ -4,18 +4,22 @@
 import { config } from "./config.js";
 import { h, setRerender, paintDrawer, closeDrawer, openDialog } from "./ui.js";
 import { openPalette } from "./palette.js";
+import { syncSticky } from "./sticky.js";
 import { state, init, subscribe, isOpenDeal, recordPresence, setViewAs, viewingAs, sortByName, personForEmail } from "./store.js";
 import { deviceZone } from "./places.js";
 import { previewBackend, supabaseClient, supabaseBackend } from "./backends.js";
 import * as home from "./views/home.js";
 import * as teams from "./views/teams.js";
+import * as worktab from "./views/worktab.js";
 import * as deals from "./views/deals.js";
 import * as crm from "./views/crm.js";
 import * as docs from "./views/docs.js";
 
-// Home comes first and is where the hub opens. Deal Tracker sits under CRM.
+// Home comes first and is where the hub opens. Deals & Tasks, where the work
+// is kept, is next. Deal Tracker sits under CRM.
 const TABS = [
   { id: "home", label: "Home", view: home },
+  { id: "work", label: "Deals & Tasks", view: worktab, count: () => state.tasks.filter((t) => t.status !== "done").length },
   { id: "teams", label: "Teams", view: teams, count: () => state.people.length },
   { id: "crm", label: "CRM", view: crm, count: () => state.contacts.length + state.people.length },
   { id: "deals", label: "Deal Tracker", view: deals, count: () => state.deals.filter(isOpenDeal).length },
@@ -88,6 +92,7 @@ function render() {
   const { tab, sub } = route();
   document.title = tab.id === "home" ? "Earendil Home" : `${tab.label} · Earendil Home`;
   app.replaceChildren(...shell(tab, sub));
+  syncSticky(true);   // on every page
   if (keep) {
     const el = document.getElementById(keep.id);
     if (el) {
@@ -109,6 +114,7 @@ function readSession() {
 }
 
 function gate({ connected, message, signedInAs, signIn, microsoft, note }) {
+  syncSticky(false);   // nothing of the hub shows on the sign-in screen
   const error = h("div", { class: "form-error", hidden: !message }, message || "");
   const email = h("input", { class: "input", id: "gate-email", type: "email", autocomplete: "username", required: true, placeholder: "Email" });
   const password = h("input", { class: "input", id: "gate-password", type: "password", autocomplete: "current-password", required: true, placeholder: "Password" });

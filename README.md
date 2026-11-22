@@ -1,6 +1,6 @@
 # Earendil Home
 
-The front end of Earendil Robotics' internal hub: Home, Teams (with everyone on the team), CRM, Deal Tracker and Documents.
+The front end of Earendil Robotics' internal hub: Home, Deals & Tasks, Teams (with everyone on the team), CRM, Deal Tracker and Documents.
 
 This repository holds the page's code only. All data lives in a private database behind a team sign-in, and nothing internal is stored here.
 
