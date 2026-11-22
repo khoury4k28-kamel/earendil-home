@@ -20,6 +20,7 @@ returns boolean language sql stable security definer set search_path = '' as $$
     join public.members m on lower(m.email) = lower(u.email)
     where u.id = (select auth.uid())
       and u.email_confirmed_at is not null
+      and m.role <> 'robot'
   );
 $$;
 -- Members with role 'reader' can see everything and change nothing. The vault's
@@ -32,9 +33,25 @@ returns boolean language sql stable security definer set search_path = '' as $$
     join public.members m on lower(m.email) = lower(u.email)
     where u.id = (select auth.uid())
       and u.email_confirmed_at is not null
-      and m.role <> 'reader'
+      and m.role not in ('reader', 'robot')
   );
 $$;
+
+-- Role 'robot' is the upload account for the Radar and Documents files. It can
+-- write those files and nothing else: it is not a member, so it reads no table.
+create or replace function public.is_robot()
+returns boolean language sql stable security definer set search_path = '' as $$
+  select exists (
+    select 1
+    from auth.users u
+    join public.members m on lower(m.email) = lower(u.email)
+    where u.id = (select auth.uid())
+      and u.email_confirmed_at is not null
+      and m.role = 'robot'
+  );
+$$;
+revoke execute on function public.is_robot() from public, anon;
+grant execute on function public.is_robot() to authenticated;
 
 revoke execute on function public.is_member() from public, anon;
 grant execute on function public.is_member() to authenticated;
@@ -254,3 +271,24 @@ begin
     end;
   end loop;
 end $$;
+
+-- ---------------------------------------------------------------- files
+-- The news Radar and the Documents tab are files, kept in two private storage
+-- buckets. Team members can read them; only the upload account can change them.
+insert into storage.buckets (id, name, public)
+values ('radar', 'radar', false), ('documents', 'documents', false)
+on conflict (id) do update set public = false;
+
+drop policy if exists "hub files: team reads" on storage.objects;
+drop policy if exists "hub files: robot adds" on storage.objects;
+drop policy if exists "hub files: robot replaces" on storage.objects;
+drop policy if exists "hub files: robot removes" on storage.objects;
+create policy "hub files: team reads" on storage.objects for select to authenticated
+  using (bucket_id in ('radar', 'documents') and ((select public.is_member()) or (select public.is_robot())));
+create policy "hub files: robot adds" on storage.objects for insert to authenticated
+  with check (bucket_id in ('radar', 'documents') and (select public.is_robot()));
+create policy "hub files: robot replaces" on storage.objects for update to authenticated
+  using (bucket_id in ('radar', 'documents') and (select public.is_robot()))
+  with check (bucket_id in ('radar', 'documents') and (select public.is_robot()));
+create policy "hub files: robot removes" on storage.objects for delete to authenticated
+  using (bucket_id in ('radar', 'documents') and (select public.is_robot()));
