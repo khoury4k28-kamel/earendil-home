@@ -316,13 +316,12 @@ create policy "hub files: robot replaces" on storage.objects for update to authe
 create policy "hub files: robot removes" on storage.objects for delete to authenticated
   using (bucket_id in ('radar', 'documents') and (select public.is_robot()));
 
+-- Team members add and remove document files, in the two folders the hub uses
+-- and nowhere else. They never overwrite: a replaced file gets a new name.
 drop policy if exists "documents: team adds" on storage.objects;
 drop policy if exists "documents: team replaces" on storage.objects;
 drop policy if exists "documents: team removes" on storage.objects;
 create policy "documents: team adds" on storage.objects for insert to authenticated
-  with check (bucket_id = 'documents' and (select public.can_write()));
-create policy "documents: team replaces" on storage.objects for update to authenticated
-  using (bucket_id = 'documents' and (select public.can_write()))
-  with check (bucket_id = 'documents' and (select public.can_write()));
+  with check (bucket_id = 'documents' and (storage.foldername(name))[1] in ('files', 'thumbs') and (select public.can_write()));
 create policy "documents: team removes" on storage.objects for delete to authenticated
-  using (bucket_id = 'documents' and (select public.can_write()));
+  using (bucket_id = 'documents' and (storage.foldername(name))[1] in ('files', 'thumbs') and (select public.can_write()));
