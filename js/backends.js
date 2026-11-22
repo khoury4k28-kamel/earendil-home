@@ -51,7 +51,9 @@ function loadScript(src) {
 
 export async function supabaseClient(config) {
   if (!window.supabase) await loadScript(config.supabaseLib);
-  return window.supabase.createClient(config.supabaseUrl, config.supabaseKey);
+  // PKCE: Microsoft hands back a one-time code in "?code=", not tokens in the
+  // "#" part of the address, which the hub uses for its own sections.
+  return window.supabase.createClient(config.supabaseUrl, config.supabaseKey, { auth: { flowType: "pkce" } });
 }
 
 async function ok(query) {

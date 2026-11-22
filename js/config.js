@@ -4,11 +4,14 @@
 // (starts with "sb_publishable_"). Both are made to be public: the database's
 // row-level rules decide who can read or write. Never put a secret key here.
 export const config = {
-  supabaseUrl: "",
-  supabaseKey: "",
+  supabaseUrl: "https://wycqeywhtcfvexoogsei.supabase.co",
+  supabaseKey: "sb_publishable_wgh6Fn-dXYNhXKlZPa36QA_2nPHrhwU",
 
   // Sign-in is for the team's own addresses only.
   emailDomain: "earendilrobotics.com",
+
+  // The live hub signs people in with their Microsoft work account. Supabase
+  // holds the Microsoft app's details; nothing about it is stored here.
 
   // Local preview only: the team password, as a salted hash in a private file
   // that never leaves this Mac. Set it with vault/_admin/set-team-password.py.

@@ -99,16 +99,17 @@ function render() {
 }
 
 // ---------- sign-in ----------
-// One screen for both cases. Live: the database checks the email and password.
-// Preview on this Mac: the email must be a team address and the password is
-// checked against the team password's hash in a private local file.
+// One screen for both cases. Live: one button, "Sign in with Microsoft"; the
+// person proves who they are with their work account and the database then
+// checks the team list. Preview on this Mac: the email must be a team address
+// and the password is checked against a hash in a private local file.
 const SESSION = "hub-session";
 const teamEmail = (email) => email.toLowerCase().endsWith("@" + config.emailDomain);
 function readSession() {
   try { const s = JSON.parse(localStorage.getItem(SESSION) || "null"); return s && s.email ? s : null; } catch { return null; }
 }
 
-function gate({ connected, message, signedInAs, signIn, note }) {
+function gate({ connected, message, signedInAs, signIn, microsoft, note }) {
   const error = h("div", { class: "form-error", hidden: !message }, message || "");
   const email = h("input", { class: "input", id: "gate-email", type: "email", autocomplete: "username", required: true, placeholder: "Email" });
   const password = h("input", { class: "input", id: "gate-password", type: "password", autocomplete: "current-password", required: true, placeholder: "Password" });
@@ -128,6 +129,17 @@ function gate({ connected, message, signedInAs, signIn, note }) {
     button.disabled = false;
     if (problem) { fail(problem); password.select(); }
   });
+  const msButton = h("button", { class: "btn gate__ms", type: "button" },
+    h("img", { src: "img/microsoft.svg", alt: "", width: "18", height: "18" }), "Sign in with Microsoft");
+  msButton.addEventListener("click", async () => {
+    msButton.disabled = true;
+    const problem = await microsoft();
+    // On success the browser has already left for Microsoft's page.
+    if (problem) { msButton.disabled = false; fail(problem); }
+  });
+  const signInWith = microsoft
+    ? h("div", { class: "block" }, msButton, h("div", { class: "field__hint" }, "Use your Earendil work account."))
+    : form;
 
   app.replaceChildren(h("div", { class: "gate" }, h("div", { class: "gate__box" },
     h("img", { class: "gate__logo", src: "img/logo.svg", alt: "", width: "32", height: "44" }),
@@ -135,19 +147,35 @@ function gate({ connected, message, signedInAs, signIn, note }) {
     h("div", { class: "gate__body" },
       error,
       !connected && h("div", { class: "empty" }, h("div", null, h("b", null, "Not connected yet."), " The hub's database hasn't been switched on. Sign-in opens once it is.")),
-      connected && !signedInAs && form,
+      connected && !signedInAs && signInWith,
       signedInAs && h("div", { class: "block" },
         h("div", null, "Signed in as ", h("b", null, signedInAs), "."),
         h("button", { class: "btn", type: "button", onclick: signOut }, "Sign out"))))));
-  if (connected && !signedInAs) email.focus();
+  if (connected && !signedInAs) (microsoft ? msButton : email).focus();
 }
 
-// Live: the database decides.
-async function liveSignIn(address, password) {
-  const { data, error: err } = await client.auth.signInWithPassword({ email: address, password });
-  if (err || !data?.user) return "That email and password don't match. Check them, or ask a hub admin to set you up.";
-  start(data.user);
-  return null;
+// Live: send the person to Microsoft. They come back to this same page with a
+// one-time code, which the sign-in library swaps for a session during boot.
+async function liveMicrosoft() {
+  const { error: err } = await client.auth.signInWithOAuth({
+    provider: "azure",
+    options: {
+      scopes: "email",
+      redirectTo: location.origin + location.pathname,
+      // Always ask which account, so signing out and back in can change person.
+      queryParams: { prompt: "select_account" },
+    },
+  });
+  return err ? "Microsoft sign-in couldn't be started. Try again in a moment." : null;
+}
+
+// If Microsoft or the sign-in service refused, the reason comes back in the address.
+function returnedError() {
+  const q = new URLSearchParams(location.search);
+  const f = new URLSearchParams(location.hash.replace(/^#/, ""));
+  if (!q.has("error") && !f.has("error")) return null;
+  history.replaceState(null, "", location.pathname);
+  return "Microsoft sign-in didn't go through. Try again, or ask a hub admin if it keeps happening.";
 }
 
 // Preview: compare with the team password's hash (PBKDF2), kept in the vault on this Mac.
@@ -199,6 +227,10 @@ function accountDialog() {
 // ---------- start ----------
 async function start(user) {
   app.replaceChildren(h("p", { class: "boot" }, "Loading Earendil Home…"));
+  if (!teamEmail(user.email || "")) {
+    gate({ connected: true, signedInAs: user.email, message: `That isn't an Earendil account. Sign out, then choose your @${config.emailDomain} account.` });
+    return;
+  }
   // Only people on the team list can read anything. Everyone else sees an empty list here.
   const { data: member, error } = await client.from("members").select("email").limit(1);
   if (error || !member?.length) {
@@ -254,9 +286,10 @@ async function boot() {
     gate({ connected: false, message: "The sign-in service couldn't be reached. Check your connection and reload." });
     return;
   }
+  const problem = returnedError();
   const { data } = await client.auth.getSession();
   if (data?.session?.user) start(data.session.user);
-  else gate({ connected: true, signIn: liveSignIn });
+  else gate({ connected: true, microsoft: liveMicrosoft, message: problem });
 }
 
 boot();
