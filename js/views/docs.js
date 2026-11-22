@@ -204,7 +204,8 @@ export function render() {
 
   return h("main", { class: "page" },
     h("div", { class: "page-head" }, h("div", { class: "title-line" }, h("h1", { class: "h1" }, "Documents"), h("span", { class: "muted" }, line)), addButton()),
-    cat === "all" && !q && h("section", { class: "sec" },
+    // Pins stay in view whichever section is picked; only a search sets them aside.
+    !q && h("section", { class: "sec" },
       h("div", { class: "sec__head" }, h("h2", { class: "sec__title" }, pinned.length ? `Pinned · ${pinned.length}` : "Pinned")),
       pinned.length
         ? h("div", { class: "docs docs--big" }, pinned.map((d) => card(d, true, true)))
