@@ -174,8 +174,16 @@ function returnedError() {
   const q = new URLSearchParams(location.search);
   const f = new URLSearchParams(location.hash.replace(/^#/, ""));
   if (!q.has("error") && !f.has("error")) return null;
+  const detail = (q.get("error_description") || f.get("error_description") || q.get("error") || f.get("error") || "")
+    .replace(/[^\w .,:'()@-]/g, " ").replace(/\s+/g, " ").trim().slice(0, 200);
   history.replaceState(null, "", location.pathname);
-  return "Microsoft sign-in didn't go through. Try again, or ask a hub admin if it keeps happening.";
+  const d = detail.toLowerCase();
+  // The usual causes, in plain words. The service's own wording follows, for whoever fixes it.
+  const why = d.includes("exchange external code") ? "The hub's Microsoft app details don't match (usually the secret)."
+    : d.includes("email") ? "Microsoft didn't pass on a verified email address for this account."
+    : d.includes("signup") ? "New accounts are switched off in the sign-in service."
+    : "Try again, or ask a hub admin if it keeps happening.";
+  return `Microsoft sign-in didn't go through. ${why}${detail ? ` (${detail})` : ""}`;
 }
 
 // Preview: compare with the team password's hash (PBKDF2), kept in the vault on this Mac.
