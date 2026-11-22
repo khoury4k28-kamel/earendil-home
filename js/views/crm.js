@@ -13,7 +13,7 @@ let filter = "all";
 let query = "";
 const selected = new Set();
 
-// Team members come from People, so nobody is typed in twice.
+// Team members come from the people on Teams, so nobody is typed in twice.
 function rows() {
   const team = state.people.map((p) => ({
     key: "p:" + p.id, id: p.id, isTeam: true, name: p.name, title: p.title, organisation: "Earendil Robotics",
@@ -116,7 +116,7 @@ export function render(sub) {
       search),
     shown.length === 0
       ? h("div", { class: "empty" }, h("div", null, h("b", null, q ? "No match." : "Nobody in this group yet."),
-          q ? " Try a shorter search." : filter === "team" ? " Add team members on the People tab." : " Add the first contact."))
+          q ? " Try a shorter search." : filter === "team" ? " Add team members on the Teams tab." : " Add the first contact."))
       : h("div", { class: "table-wrap" }, h("table", null,
           h("thead", null, h("tr", null,
             h("th", { class: "tight" }, check(allShownSelected, "Select all shown", (on) => { shown.forEach((r) => (on ? selected.add(r.key) : selected.delete(r.key))); refresh(); })),

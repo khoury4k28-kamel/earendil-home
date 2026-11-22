@@ -92,7 +92,7 @@ export function fieldsFor(table, record = {}) {
       { key: "status", label: "Status", type: "select", required: true, options: PROJECT_STATUS },
       { key: "due", label: "Due", type: "date" },
       { key: "deal_id", label: "Under a deal", type: "select", options: deals(), blank: "No deal" },
-      { key: "people_ids", label: "Who's on it", type: "multi", options: people(), none: "Add people on the People tab first." },
+      { key: "people_ids", label: "Who's on it", type: "multi", options: people(), none: "Add people on the Teams tab first." },
       { key: "summary", label: "What it's for", type: "textarea" },
     ];
     case "deals": return [

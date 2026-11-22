@@ -439,7 +439,7 @@ function comingUp(skip) {
 function team() {
   const others = state.people.filter((p) => p.id !== meId()).sort((a, b) => a.name.localeCompare(b.name));
   if (!others.length) return null;
-  return section("Team", h("a", { class: "link small", href: "#people" }, "All"),
+  return section("Team", h("a", { class: "link small", href: "#teams" }, "All"),
     h("ul", null, others.map((p) => {
       const place = personPlace(p);
       return h("li", { class: "arow" },
@@ -521,7 +521,7 @@ function pulse() {
     next && h("button", { type: "button", onclick: () => editRecord("milestones", next) }, left === 0 ? `${next.title} is today` : `${plural(left, "day")} to ${next.title}`),
   ]));
 }
-// What you are working on, in your own words. The team sees it on People and on their Home.
+// What you are working on, in your own words. The team sees it in your panel on Teams and on their Home.
 function yourUpdate() {
   const me = byId("people", meId());
   if (!me) return null;

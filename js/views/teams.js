@@ -1,16 +1,20 @@
-// Teams: who reports to whom, then each team's lead, members, strategy,
-// goals, milestones and tasks. Lines, leads and members are set in place.
+// Teams: the corporate structure as a top-down chart, then a list of each
+// person, then each team's lead, members, strategy, goals, milestones and
+// tasks. Pressing a person opens their panel, so there is no People page.
 
 import { h, avatar, kv, panel, refresh, inlineEdit, quickAdd } from "../ui.js";
-import { state, sortByName, byId, update, create } from "../store.js";
+import { personPlace } from "../places.js";
+import { showTeamOnMap } from "./map.js";
+import { state, sortByName, byId, update, create, teamName, dealsForPerson, tasksForPerson } from "../store.js";
 import { editRecord, addBtn, personChip, openPerson, taskList, pickPerson } from "../detail.js";
 import { goalsList, milestoneRows } from "./home.js";
 
 let editingLines = false;
 
+// One box in the chart: who they are and their title. Pressing it opens their panel.
 function node(p) {
-  return h("button", { class: "node", type: "button", onclick: () => openPerson(p.id) },
-    avatar(p.name, "s"), h("span", null, h("b", null, p.name), p.title ? " · " + p.title : ""));
+  return h("button", { class: "onode", type: "button", onclick: () => openPerson(p.id) },
+    avatar(p.name), h("b", null, p.name), p.title && h("span", { class: "onode__title" }, p.title));
 }
 function branch(p, seen) {
   if (seen.has(p.id)) return null;
@@ -32,8 +36,29 @@ function reportingLines() {
   const seen = new Set();
   const roots = people.filter((p) => !p.reports_to || !byId("people", p.reports_to));
   // If the lines loop back on themselves nobody is at the top, so start from everyone.
-  return h("ul", { class: "tree" }, (roots.length ? roots : people).map((r) => branch(r, seen)));
+  // Top down: each person sits above the people who report to them.
+  return h("div", { class: "org-wrap" }, h("ul", { class: "org" }, (roots.length ? roots : people).map((r) => branch(r, seen))));
 }
+
+// Everyone, one row each, always with the same four columns after the name:
+// working on, where they are, open tasks, deals. An empty one shows a dash.
+const PEOPLE_COLS = ["Working on", "Location", "Open tasks", "Deals"];
+function personRow(p) {
+  const place = personPlace(p);
+  const open = tasksForPerson(p.id).filter((t) => t.status !== "done").length;
+  const deals = dealsForPerson(p.id).length;
+  const cell = (label, value, cls) => h("span", { class: "prow__cell" + (cls ? " " + cls : "") + (value ? "" : " prow__cell--none"), "data-label": label }, value || "–");
+  return h("li", null, h("button", { class: "prow", type: "button", onclick: () => openPerson(p.id) },
+    avatar(p.name),
+    h("span", { class: "prow__who" }, h("b", null, p.name), h("span", { class: "small sub" }, [p.title, teamName(p.team_id)].filter(Boolean).join(" · "))),
+    cell(PEOPLE_COLS[0], p.focus),
+    cell(PEOPLE_COLS[1], place.text && h("span", { class: "prow__where" },
+      h("span", { class: "pin" + (place.live ? " pin--live" : ""), title: place.live ? "From the time zone of their last sign-in" : "Typed in by hand" }), place.text)),
+    cell(PEOPLE_COLS[2], String(open), "num"),
+    cell(PEOPLE_COLS[3], String(deals), "num")));
+}
+const peopleHead = () => h("div", { class: "prow prow--head", "aria-hidden": "true" },
+  h("span", null), h("span", null, "Name"), PEOPLE_COLS.map((c, i) => h("span", { class: i > 1 ? "num" : null }, c)));
 
 function teamPanel(t) {
   const members = sortByName(state.people.filter((p) => p.team_id === t.id));
@@ -70,10 +95,16 @@ export function render() {
   return h("main", { class: "page" },
     h("div", { class: "page-head" },
       h("h1", { class: "h1" }, "Teams"),
-      h("button", { class: "btn btn--primary", type: "button", onclick: () => editRecord("teams", null) }, "Add team")),
-    state.people.length > 0 && panel("Who reports to whom",
+      h("div", { class: "actions" },
+        state.people.some((p) => personPlace(p).located) && h("a", { class: "btn", href: "#crm/map", onclick: () => showTeamOnMap() }, "See on the map"),
+        h("button", { class: "btn", type: "button", onclick: () => editRecord("people", null) }, "Add person"),
+        h("button", { class: "btn btn--primary", type: "button", onclick: () => editRecord("teams", null) }, "Add team"))),
+    state.people.length === 0 && h("div", { class: "sec" }, quickAdd("new-person", "Name the first team member", (name) => create("people", { name }))),
+    state.people.length > 0 && panel("Corporate structure",
       hasLines() && h("button", { class: "btn btn--small", type: "button", onclick: () => { editingLines = !editingLines; refresh(); } }, editingLines ? "Done" : "Edit"),
       reportingLines()),
+    state.people.length > 0 && panel(`People · ${state.people.length}`, null,
+      peopleHead(), h("ul", { class: "prows" }, sortByName(state.people).map(personRow))),
     teams.length
       ? h("div", { class: "grid" }, teams.map(teamPanel))
       : h("div", { class: "sec" }, quickAdd("new-team", "Name the first team", (name) => create("teams", { name }))),

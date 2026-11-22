@@ -8,7 +8,6 @@ import { state, init, subscribe, isOpenDeal, recordPresence, setViewAs, viewingA
 import { deviceZone } from "./places.js";
 import { previewBackend, supabaseClient, supabaseBackend } from "./backends.js";
 import * as home from "./views/home.js";
-import * as people from "./views/people.js";
 import * as teams from "./views/teams.js";
 import * as deals from "./views/deals.js";
 import * as crm from "./views/crm.js";
@@ -17,8 +16,7 @@ import * as docs from "./views/docs.js";
 // Home comes first and is where the hub opens. Deal Tracker sits under CRM.
 const TABS = [
   { id: "home", label: "Home", view: home },
-  { id: "people", label: "People", view: people, count: () => state.people.length },
-  { id: "teams", label: "Teams", view: teams, count: () => state.teams.length },
+  { id: "teams", label: "Teams", view: teams, count: () => state.people.length },
   { id: "crm", label: "CRM", view: crm, count: () => state.contacts.length + state.people.length },
   { id: "deals", label: "Deal Tracker", view: deals, count: () => state.deals.filter(isOpenDeal).length },
   { id: "docs", label: "Documents", view: docs, count: () => state.documents.filter((d) => !d.archive).length },
@@ -31,7 +29,8 @@ let notice = null;
 
 // "#crm/map" is the CRM section, map page.
 const route = () => {
-  const [id, sub] = location.hash.replace("#", "").split("/");
+  let [id, sub] = location.hash.replace("#", "").split("/");
+  if (id === "people") id = "teams"; // People was folded into Teams; old links still land.
   return { tab: TABS.find((t) => t.id === id) || TABS.find((t) => t.id === "home"), sub: sub || "" };
 };
 
@@ -227,7 +226,7 @@ function accountDialog() {
     body: h("div", { class: "block" },
       h("div", null, "Signed in as ", h("b", null, signedInName()), "."),
       personForEmail(state.me.email) ? h("div", { class: "muted" }, state.me.email)
-        : h("div", { class: "muted small" }, "This address isn't matched to anyone on People yet. Home will ask which one is you.")),
+        : h("div", { class: "muted small" }, "This address isn't matched to anyone on Teams yet. Home will ask which one is you.")),
     foot: [h("span"), h("button", { class: "btn", type: "button", onclick: signOut }, "Sign out")],
   });
 }

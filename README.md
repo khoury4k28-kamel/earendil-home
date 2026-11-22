@@ -1,6 +1,6 @@
 # Earendil Home
 
-The front end of Earendil Robotics' internal hub: People, Home, Teams, Deal Tracker and CRM.
+The front end of Earendil Robotics' internal hub: Home, Teams (with everyone on the team), CRM, Deal Tracker and Documents.
 
 This repository holds the page's code only. All data lives in a private database behind a team sign-in, and nothing internal is stored here.
 
@@ -21,4 +21,4 @@ node tools/build-geo.mjs <path>/countries-110m.json /usr/share/zoneinfo/zone.tab
 
 The outlines are Natural Earth (public domain) as packaged by world-atlas (ISC, `js/geo.LICENSE.txt`). The time zone table is IANA's `zone.tab` (public domain).
 
-A person's place on the People page and the map comes from the time zone their device reports when they open the hub. No GPS is read and no outside service is called.
+A person's place on the Teams page and the map comes from the time zone their device reports when they open the hub. No GPS is read and no outside service is called.
