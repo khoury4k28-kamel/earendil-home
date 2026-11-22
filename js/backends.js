@@ -33,7 +33,11 @@ export async function previewBackend(seedUrl, { documents, radar } = {}) {
     mode: "preview",
     seedMissing,
     me: { email: null, label: "Preview" },
-    async loadAll() { return seed; },
+    async loadAll() { return { ...seed, documentsEditable: true }; },
+    // Files added in preview live in this browser tab only.
+    async signFiles() { return {}; },
+    async putFile() {},
+    async removeFiles() {},
     async insert() {}, async update() {}, async remove() {}, async setSetting() {},
     onChange() {},
   };
@@ -62,10 +66,10 @@ async function ok(query) {
   return data;
 }
 
-// Live: the Radar and the Documents tab are files in two private storage
-// buckets. Each file is opened through a signed address that works for a day
-// and is only handed to people on the team list. Both are extras: if either
-// is missing the hub still opens, without that part.
+// Live: the Radar's pictures and the documents are files in two private
+// storage buckets. Each file is opened through a signed address that works for
+// a day and is only handed to people on the team list. Both are extras: if
+// either is missing the hub still opens, without that part.
 const DAY = 24 * 60 * 60;
 async function storedJson(client, bucket, path) {
   const { data, error } = await client.storage.from(bucket).download(path);
@@ -86,13 +90,14 @@ async function liveRadar(client) {
   // A headline whose picture can't be opened is left out, as everywhere else.
   return { ...radar, items: radar.items.filter((it) => urls[it.thumb]).map((it) => ({ ...it, thumb: urls[it.thumb] })) };
 }
+// Documents are rows in the database. Until the first ones are moved there,
+// the list the upload script left in storage is shown, read-only.
 async function liveDocuments(client) {
+  const { data: rows, error } = await client.from("documents").select("*");
+  if (!error && rows.length) return { documents: rows, editable: true };
   const index = await storedJson(client, "documents", "index.json");
-  if (!index || !Array.isArray(index.documents)) return null;
-  const urls = await signed(client, "documents", index.documents.flatMap((d) => [d.file, d.thumb]));
-  const documents = index.documents.filter((d) => urls[d.file] && urls[d.thumb])
-    .map((d) => ({ ...d, file: urls[d.file], thumb: urls[d.thumb] }));
-  return { documents, updated: index.updated || null };
+  if (index && Array.isArray(index.documents) && index.documents.length) return { documents: index.documents, updated: index.updated || null, editable: false };
+  return { documents: [], editable: !error };
 }
 
 // Live: the shared Supabase database. Reads and writes run as the signed-in
@@ -108,8 +113,18 @@ export function supabaseBackend(client, user) {
       out.settings = Object.fromEntries(rows.map((r) => [r.key, r.value]));
       const [radar, docs] = await Promise.all([liveRadar(client).catch(() => null), liveDocuments(client).catch(() => null)]);
       if (radar) out.radar = radar;
-      if (docs) { out.documents = docs.documents; out.documentsUpdated = docs.updated; }
+      if (docs) { out.documents = docs.documents; out.documentsUpdated = docs.updated || null; out.documentsEditable = docs.editable; }
       return out;
+    },
+    signFiles: (bucket, paths) => signed(client, bucket, paths),
+    async putFile(bucket, path, blob, type) {
+      const { error } = await client.storage.from(bucket).upload(path, blob, { contentType: type, upsert: false, cacheControl: "3600" });
+      if (error) throw error;
+    },
+    async removeFiles(bucket, paths) {
+      if (!paths.length) return;
+      const { error } = await client.storage.from(bucket).remove(paths);
+      if (error) throw error;
     },
     insert: (table, row) => ok(client.from(table).insert(row)),
     update: (table, id, patch) => ok(client.from(table).update(patch).eq("id", id)),

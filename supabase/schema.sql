@@ -188,6 +188,26 @@ create table if not exists public.activity (
   updated_by text
 );
 
+-- Decks, brochures and pictures on the Documents tab. The files themselves are
+-- in the private 'documents' storage bucket; file and thumb are paths in it.
+create table if not exists public.documents (
+  id text primary key default gen_random_uuid()::text,
+  title text not null,
+  category text not null default 'Other',
+  audience text not null default 'internal',
+  kind text,
+  file text not null,
+  thumb text not null,
+  w integer, h integer,
+  date date, size bigint, pages integer,
+  note text, live text, top integer,
+  archive boolean not null default false,
+  source text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  updated_by text
+);
+
 -- ---------------------------------------------------------------- who changed what, and when
 create or replace function public.touch_row()
 returns trigger language plpgsql set search_path = '' as $$
@@ -201,7 +221,7 @@ $$;
 do $$
 declare t text;
 begin
-  foreach t in array array['settings','people','teams','goals','milestones','tasks','projects','deals','contacts','activity'] loop
+  foreach t in array array['settings','people','teams','goals','milestones','tasks','projects','deals','contacts','activity','documents'] loop
     execute format('drop trigger if exists touch on public.%I', t);
     execute format('create trigger touch before insert or update on public.%I for each row execute function public.touch_row()', t);
   end loop;
@@ -244,7 +264,7 @@ create policy "members can see the team list" on public.members
 do $$
 declare t text;
 begin
-  foreach t in array array['settings','people','teams','goals','milestones','tasks','projects','deals','contacts','activity'] loop
+  foreach t in array array['settings','people','teams','goals','milestones','tasks','projects','deals','contacts','activity','documents'] loop
     execute format('alter table public.%I enable row level security', t);
     execute format('revoke all on public.%I from anon', t);
     execute format('grant select, insert, update, delete on public.%I to authenticated', t);
@@ -264,7 +284,7 @@ end $$;
 do $$
 declare t text;
 begin
-  foreach t in array array['settings','people','teams','goals','milestones','tasks','projects','deals','contacts','activity'] loop
+  foreach t in array array['settings','people','teams','goals','milestones','tasks','projects','deals','contacts','activity','documents'] loop
     begin
       execute format('alter publication supabase_realtime add table public.%I', t);
     exception when duplicate_object then null;
@@ -274,10 +294,13 @@ end $$;
 
 -- ---------------------------------------------------------------- files
 -- The news Radar and the Documents tab are files, kept in two private storage
--- buckets. Team members can read them; only the upload account can change them.
-insert into storage.buckets (id, name, public)
-values ('radar', 'radar', false), ('documents', 'documents', false)
-on conflict (id) do update set public = false;
+-- buckets. Team members can read both. The upload account fills the Radar;
+-- team members add, replace and remove documents from the hub itself.
+-- Documents are PDFs and pictures, 50 MB at most.
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values ('radar', 'radar', false, 5242880, array['application/json', 'image/jpeg', 'image/png', 'image/webp']),
+       ('documents', 'documents', false, 52428800, array['application/json', 'application/pdf', 'image/jpeg', 'image/png', 'image/webp'])
+on conflict (id) do update set public = false, file_size_limit = excluded.file_size_limit, allowed_mime_types = excluded.allowed_mime_types;
 
 drop policy if exists "hub files: team reads" on storage.objects;
 drop policy if exists "hub files: robot adds" on storage.objects;
@@ -292,3 +315,14 @@ create policy "hub files: robot replaces" on storage.objects for update to authe
   with check (bucket_id in ('radar', 'documents') and (select public.is_robot()));
 create policy "hub files: robot removes" on storage.objects for delete to authenticated
   using (bucket_id in ('radar', 'documents') and (select public.is_robot()));
+
+drop policy if exists "documents: team adds" on storage.objects;
+drop policy if exists "documents: team replaces" on storage.objects;
+drop policy if exists "documents: team removes" on storage.objects;
+create policy "documents: team adds" on storage.objects for insert to authenticated
+  with check (bucket_id = 'documents' and (select public.can_write()));
+create policy "documents: team replaces" on storage.objects for update to authenticated
+  using (bucket_id = 'documents' and (select public.can_write()))
+  with check (bucket_id = 'documents' and (select public.can_write()));
+create policy "documents: team removes" on storage.objects for delete to authenticated
+  using (bucket_id = 'documents' and (select public.can_write()));

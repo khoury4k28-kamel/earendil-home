@@ -2,7 +2,7 @@
 // contact or person, jump to a section, or start a new record.
 
 import { h } from "./ui.js";
-import { state } from "./store.js";
+import { state, fileUrl } from "./store.js";
 import { editRecord, openDeal, openContact, openPerson, openProject } from "./detail.js";
 import { stageLabel, categoryLabel, projectStatusLabel } from "./schema.js";
 
@@ -26,7 +26,7 @@ function items(extra) {
     ...state.projects.map((p) => ({ group: "Projects", label: p.name, sub: projectStatusLabel(p.status), run: () => openProject(p.id) })),
     ...state.contacts.map((c) => ({ group: "Contacts", label: c.name, sub: [categoryLabel(c.category), c.organisation !== c.name && c.organisation].filter(Boolean).join(" · "), run: () => openContact(c.id) })),
     ...state.people.map((p) => ({ group: "People", label: p.name, sub: p.title || "", run: () => openPerson(p.id) })),
-    ...state.documents.map((d) => ({ group: "Documents", label: d.title, sub: [d.category, d.kind].join(" · "), run: () => window.open(state.documentsBase + d.file, "_blank", "noopener") })),
+    ...state.documents.map((d) => ({ group: "Documents", label: d.title, sub: [d.category, d.kind].join(" · "), run: () => window.open(fileUrl(d.file), "_blank", "noopener") })),
   ];
   return { create: [...create, ...extra.map(([label, run]) => ({ group: "Go to", label, sub: "", run }))], go, records };
 }

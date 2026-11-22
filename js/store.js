@@ -10,7 +10,9 @@ export const state = {
   me: { id: null, email: null, name: null, label: "" },
   settings: {},
   people: [], teams: [], goals: [], milestones: [], tasks: [], projects: [], deals: [], contacts: [], activity: [],
-  documents: [], documentsBase: "", documentsUpdated: null,   // decks and materials (read-only here)
+  documents: [], documentsBase: "", documentsUpdated: null,   // decks and materials
+  documentsEditable: false,                                    // can documents be added and changed here?
+  fileUrls: {},                                                // storage path -> an address the browser can open
   radar: null, radarBase: "",                                  // { updated, items }: the week's headlines, and where their pictures are
 };
 
@@ -65,8 +67,10 @@ export async function init(b) {
   state.documents = data.documents || [];
   state.documentsBase = data.documentsBase || "";
   state.documentsUpdated = data.documentsUpdated || null;
+  state.documentsEditable = Boolean(data.documentsEditable);
   state.radar = data.radar || null;
   state.radarBase = data.radarBase || "";
+  await signDocuments();
   state.me = { id: null, email: b.me.email, name: null, label: "", fallback: b.me.label };
   b.onChange(applyRemote);
   emit();
@@ -76,12 +80,13 @@ function applyRemote({ table, eventType, new: row, old }) {
   if (table === "settings") {
     if (eventType === "DELETE") delete state.settings[old.key];
     else state.settings = { ...state.settings, [row.key]: row.value };
-  } else if (TABLES.includes(table)) {
+  } else if (TABLES.includes(table) || table === "documents") {
     if (eventType === "DELETE") state[table] = state[table].filter((r) => r.id !== old.id);
     else if (state[table].some((r) => r.id === row.id)) state[table] = state[table].map((r) => (r.id === row.id ? row : r));
     else state[table] = [...state[table], row];
   } else return;
   emit();
+  if (table === "documents") signDocuments().then((added) => added && emit());
 }
 
 const newId = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2));
@@ -147,6 +152,64 @@ export function addNote(entityType, entityId, body) {
     entity_type: entityType, entity_id: entityId, body,
     author: state.me.label || "Team", source: "manual", created_at: new Date().toISOString(),
   });
+}
+
+// ---------- documents: the files behind them ----------
+// A document row names two files in private storage: the file itself and its
+// thumbnail. fileUrl turns such a path into an address the browser can open.
+export const fileUrl = (path) => state.fileUrls[path] || (state.mode === "live" ? "" : state.documentsBase + path);
+// Live: ask for signed addresses for any file that doesn't have one yet.
+async function signDocuments() {
+  if (state.mode !== "live") return false;
+  const need = state.documents.flatMap((d) => [d.file, d.thumb]).filter((p) => p && !state.fileUrls[p]);
+  if (!need.length) return false;
+  try { state.fileUrls = { ...state.fileUrls, ...(await backend.signFiles("documents", need)) }; } catch (err) { console.warn(err); return false; }
+  return true;
+}
+const slug = (text) => String(text).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48) || "document";
+const tail = () => Math.random().toString(36).slice(2, 8);
+const EXT = { "application/pdf": "pdf", "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
+
+// Sends a file and its thumbnail to storage and returns what the row needs.
+// The name ends in a few random letters, so a replaced file never shows an old
+// copy the browser kept.
+async function storeFiles(id, file, thumb) {
+  const stem = `${id}-${tail()}`;
+  const paths = { file: `files/${stem}.${EXT[file.type]}`, thumb: `thumbs/${stem}.jpg` };
+  await backend.putFile("documents", paths.file, file, file.type);
+  try { await backend.putFile("documents", paths.thumb, thumb.blob, "image/jpeg"); } catch (err) {
+    backend.removeFiles("documents", [paths.file]).catch(() => {});
+    throw err;
+  }
+  // Whoever added it sees it at once, from the copy already in the browser.
+  state.fileUrls = { ...state.fileUrls, [paths.file]: URL.createObjectURL(file), [paths.thumb]: URL.createObjectURL(thumb.blob) };
+  return { ...paths, w: thumb.w, h: thumb.h, size: file.size, pages: thumb.pages || null, kind: file.type === "application/pdf" ? "PDF" : "Image" };
+}
+const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+
+export async function addDocument(file, thumb, details) {
+  const id = `${slug(details.title)}-${tail()}`;
+  let stored;
+  try { stored = await storeFiles(id, file, thumb); } catch (err) { console.error(err); return null; }
+  const row = await create("documents", { id, ...details, ...stored, date: today(), archive: false });
+  if (!row) backend.removeFiles("documents", [stored.file, stored.thumb]).catch(() => {});
+  return row;
+}
+// A new version of the same document: it keeps its place, its pins and its details.
+export async function replaceDocumentFile(id, file, thumb) {
+  const doc = byId("documents", id);
+  if (!doc) return false;
+  let stored;
+  try { stored = await storeFiles(id, file, thumb); } catch (err) { console.error(err); return false; }
+  const done = await update("documents", id, { ...stored, date: today() });
+  backend.removeFiles("documents", done ? [doc.file, doc.thumb] : [stored.file, stored.thumb]).catch((err) => console.warn(err));
+  return done;
+}
+export async function removeDocument(id) {
+  const doc = byId("documents", id);
+  if (!doc || !(await remove("documents", id))) return false;
+  backend.removeFiles("documents", [doc.file, doc.thumb]).catch((err) => console.warn(err));
+  return true;
 }
 
 // ---------- pinned documents: each person's own ----------

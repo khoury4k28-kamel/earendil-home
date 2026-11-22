@@ -701,3 +701,15 @@ button.tidy__title:hover { text-decoration: underline; text-underline-offset: 3p
 .radar ol { counter-reset: news; }
 .nrow { counter-increment: news; }
 .nrow__n::before { content: counter(news, decimal-leading-zero); }
+
+/* documents: add, edit, replace */
+.doc__tools { display: flex; gap: 14px; padding-top: 8px; margin-top: 2px; border-top: 1px solid var(--line); opacity: 0; transition: opacity 0.12s; }
+.doc:hover .doc__tools, .doc__tools:focus-within { opacity: 1; }
+@media (hover: none) { .doc__tools { opacity: 1; } }
+.doc__tool { font-size: 13px; font-weight: 500; color: var(--muted); padding: 2px 0; }
+.doc__tool:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
+.drop { display: flex; align-items: center; gap: 16px; width: 100%; padding: 16px; border: 1.5px dashed var(--line-2); border-radius: 14px; background: var(--soft); text-align: left; transition: border-color 0.12s, background-color 0.12s; }
+.drop:hover, .drop.is-over, .drop:focus-visible { border-color: var(--ink); background: var(--bg); outline: none; }
+.drop__preview:empty { display: none; }
+.drop__preview img { display: block; width: 132px; height: auto; max-height: 96px; object-fit: cover; object-position: top center; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+.drop__prompt { display: flex; flex-direction: column; gap: 3px; min-width: 0; overflow-wrap: anywhere; }
