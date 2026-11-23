@@ -2,10 +2,11 @@
 // sign-in, draws the sidebar, and shows the section for the address.
 
 import { config } from "./config.js";
-import { h, setRerender, paintDrawer, closeDrawer, openDialog } from "./ui.js";
+import { h, setRerender, paintDrawer, closeDrawer, openDialog, avatar } from "./ui.js";
+import { openPerson } from "./detail.js";
 import { openPalette } from "./palette.js";
 import { syncSticky } from "./sticky.js";
-import { state, init, subscribe, isOpenDeal, recordPresence, setViewAs, viewingAs, sortByName, personForEmail } from "./store.js";
+import { state, init, subscribe, isOpenDeal, recordPresence, setViewAs, viewingAs, sortByName, personForEmail, onlineNow } from "./store.js";
 import { deviceZone } from "./places.js";
 import { previewBackend, supabaseClient, supabaseBackend } from "./backends.js";
 import * as home from "./views/home.js";
@@ -53,6 +54,7 @@ function shell(tab, sub) {
         state.mode === "preview" && h("div", { class: "side__preview" },
           viewAsPicker(),
           h("span", { class: "tag tag--solid", title: "Showing the local seed file. Changes aren't saved." }, "Preview · not saved")),
+        onlineStrip(),
         // Who is signed in. Press it to sign out.
         h("button", { class: "side__account", type: "button", id: "account", onclick: accountDialog, title: state.me.email || null },
           h("span", { class: "muted small" }, "Signed in as"),
@@ -67,6 +69,30 @@ function shell(tab, sub) {
 function signedInName() {
   if (!state.me.email) return "Nobody";
   return personForEmail(state.me.email)?.name || state.me.email;
+}
+
+// Who has the hub open right now: a row of faces above the account, each with
+// a dot (green: looking at it; grey: open in a background tab). Pressing the
+// row lists them, and pressing a name opens that person's panel.
+let onlineOpen = false;
+const face = (o, size) => h("span", { class: "on" + (o.active ? "" : " on--away") }, avatar(o.name, size));
+function onlineStrip() {
+  const list = onlineNow();
+  const others = list.length - 1;
+  const shown = list.slice(0, 4);
+  return h("div", { class: "side__online" },
+    onlineOpen && h("div", { class: "onpop", role: "dialog", "aria-label": "Online now" },
+      h("div", { class: "onpop__title" }, "Online now"),
+      list.map((o) => h("button", { class: "onpop__row", type: "button", disabled: !o.id,
+        onclick: () => { onlineOpen = false; render(); openPerson(o.id); } },
+        face(o, "s"),
+        h("span", { class: "onpop__name" }, o.name),
+        h("span", { class: "muted small" }, o.me ? "You" : o.active ? "" : "Away")))),
+    h("button", { class: "onbtn", type: "button", id: "online", "aria-expanded": String(onlineOpen),
+      onclick: () => { onlineOpen = !onlineOpen; render(); } },
+      h("span", { class: "onbtn__faces" }, shown.map((o) => face(o, "s")),
+        list.length > shown.length && h("span", { class: "onbtn__more num" }, "+" + (list.length - shown.length))),
+      h("span", { class: "onbtn__label" }, others ? `${list.length} online` : "Only you online")));
 }
 
 // Local preview only: see the hub as one of the team would.
@@ -278,6 +304,11 @@ async function boot() {
   window.addEventListener("hashchange", () => { closeDrawer(); render(); window.scrollTo(0, 0); });
   document.addEventListener("keydown", (e) => {
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") { e.preventDefault(); palette(); }
+    if (e.key === "Escape" && onlineOpen) { onlineOpen = false; render(); }
+  });
+  // The "online now" list closes when anything outside it is pressed.
+  document.addEventListener("click", (e) => {
+    if (onlineOpen && !e.target.closest?.(".side__online")) { onlineOpen = false; render(); }
   });
 
   const local = ["localhost", "127.0.0.1", "[::1]"].includes(location.hostname);

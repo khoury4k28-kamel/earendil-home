@@ -330,3 +330,12 @@ create policy "documents: team adds" on storage.objects for insert to authentica
   with check (bucket_id = 'documents' and (storage.foldername(name))[1] in ('files', 'thumbs') and (select public.can_write()));
 create policy "documents: team removes" on storage.objects for delete to authenticated
   using (bucket_id = 'documents' and (storage.foldername(name))[1] in ('files', 'thumbs') and (select public.can_write()));
+
+-- Who is online: the hub's presence channel ("online") is private. Only people
+-- on the team list may join it, see who else is there and announce themselves.
+drop policy if exists "hub online: team sees" on realtime.messages;
+drop policy if exists "hub online: team announces" on realtime.messages;
+create policy "hub online: team sees" on realtime.messages for select to authenticated
+  using ((select public.is_member()) and (select realtime.topic()) = 'online' and extension = 'presence');
+create policy "hub online: team announces" on realtime.messages for insert to authenticated
+  with check ((select public.is_member()) and (select realtime.topic()) = 'online' and extension = 'presence');

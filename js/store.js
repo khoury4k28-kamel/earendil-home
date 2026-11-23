@@ -13,6 +13,7 @@ export const state = {
   documents: [], documentsBase: "", documentsUpdated: null,   // decks and materials
   documentsEditable: false,                                    // can documents be added and changed here?
   fileUrls: {},                                                // storage path -> an address the browser can open
+  online: [],                                                  // teammates with the hub open now: { email, active }
   radar: null, radarBase: "",                                  // { updated, items }: the week's headlines, and where their pictures are
 };
 
@@ -73,7 +74,23 @@ export async function init(b) {
   await signDocuments();
   state.me = { id: null, email: b.me.email, name: null, label: "", fallback: b.me.label };
   b.onChange(applyRemote);
+  if (b.presence) b.presence((list) => { state.online = list; emit(); });
   emit();
+}
+
+// Everyone with the hub open now, the viewer first. "active" is false when
+// their tab is in the background. In preview nobody else can be online.
+export function onlineNow() {
+  const mine = (state.me.email || "").toLowerCase();
+  const me = byId("people", state.me.id);
+  const out = [{ id: me?.id || null, name: me?.name || state.me.email || "You", me: true, active: true }];
+  for (const o of state.online) {
+    if (o.email.toLowerCase() === mine) continue;
+    const p = personForEmail(o.email);
+    if (p && out.some((x) => x.id === p.id)) continue;
+    out.push({ id: p?.id || null, name: p?.name || o.email, me: false, active: o.active });
+  }
+  return [out[0], ...out.slice(1).sort((a, b) => b.active - a.active || a.name.localeCompare(b.name))];
 }
 
 function applyRemote({ table, eventType, new: row, old }) {

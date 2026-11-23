@@ -130,6 +130,24 @@ export function supabaseBackend(client, user) {
     update: (table, id, patch) => ok(client.from(table).update(patch).eq("id", id)),
     remove: (table, id) => ok(client.from(table).delete().eq("id", id)),
     setSetting: (key, value) => ok(client.from("settings").upsert({ key, value })),
+    // Who has the hub open right now. Each open tab announces itself on a
+    // shared channel and the service drops it when the tab closes; nothing is
+    // written to the database. "active" is false while the tab is in the background.
+    // The channel is private: the database only lets people on the team list
+    // join it (the "who is online" rules in supabase/schema.sql). Without that
+    // rule the join is refused and the strip shows only the viewer.
+    presence(cb) {
+      const ch = client.channel("online", { config: { private: true, presence: { key: user.email } } });
+      const mine = () => ({ email: user.email, active: !document.hidden });
+      ch.on("presence", { event: "sync" }, () => {
+        const seen = new Map();
+        for (const m of Object.values(ch.presenceState()).flat()) {
+          if (m.email) seen.set(m.email, seen.get(m.email) || Boolean(m.active));
+        }
+        cb([...seen].map(([email, active]) => ({ email, active })));
+      }).subscribe((status) => { if (status === "SUBSCRIBED") ch.track(mine()); });
+      document.addEventListener("visibilitychange", () => { ch.track(mine()); });
+    },
     onChange(cb) {
       client.channel("hub").on("postgres_changes", { event: "*", schema: "public" }, cb).subscribe();
     },

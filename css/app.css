@@ -911,3 +911,28 @@ button.tidy__title:hover { text-decoration: underline; text-underline-offset: 3p
 @media (max-width: 640px) {
   .sticky { right: 16px; bottom: 16px; }
 }
+
+/* ---------- who is online (sidebar, above the account) ---------- */
+.side__online { position: relative; margin: 0 -10px; }
+.onbtn { display: flex; align-items: center; gap: 10px; width: 100%; padding: 7px 10px; border-radius: var(--r-s); text-align: left; min-width: 0; }
+.onbtn:hover, .onbtn[aria-expanded="true"] { background: var(--soft-2); }
+.onbtn__faces { display: flex; align-items: center; flex: none; }
+.onbtn__faces .on + .on { margin-left: -6px; }
+.onbtn__more { margin-left: 6px; font-size: 12px; color: var(--muted); }
+.onbtn__label { font-size: 13px; color: var(--text-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.on { position: relative; display: inline-flex; flex: none; border-radius: 50%; box-shadow: 0 0 0 2px #FAFAFA; }
+.on::after { content: ""; position: absolute; right: -2px; bottom: -2px; width: 8px; height: 8px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 2px #FAFAFA; }
+.on--away::after { background: var(--faint); }
+.onpop { position: absolute; left: 0; bottom: calc(100% + 6px); z-index: 30; width: 232px; max-height: 60vh; overflow-y: auto; padding: 8px; border: 1px solid var(--line-2); border-radius: var(--r-m); background: var(--bg); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.10); }
+.onpop .on, .onpop .on::after { box-shadow: 0 0 0 2px var(--bg); }
+.onpop__title { padding: 4px 8px 6px; font-size: 12px; font-weight: 500; color: var(--muted); }
+.onpop__row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 7px 8px; border-radius: var(--r-s); text-align: left; min-width: 0; }
+.onpop__row:not(:disabled):hover { background: var(--soft); }
+.onpop__name { flex: 1; min-width: 0; font-size: 14px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 860px) {
+  .side__online { margin: 0; }
+  .onbtn { width: auto; padding: 4px 6px; }
+  .onbtn__label { display: none; }
+  .on, .on::after { box-shadow: 0 0 0 2px var(--bg); }
+  .onpop { left: auto; right: 0; bottom: auto; top: calc(100% + 6px); }
+}
