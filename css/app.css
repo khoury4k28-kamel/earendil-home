@@ -410,8 +410,17 @@ td input[type="checkbox"], th input[type="checkbox"] { width: 16px; height: 16px
 .form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 16px; }
 .form .wide { grid-column: 1 / -1; }
 .picks { border: 1px solid var(--line-2); border-radius: 10px; background: var(--bg); max-height: 168px; overflow-y: auto; padding: 6px 12px; display: flex; flex-direction: column; }
-.pick { display: flex; gap: 10px; align-items: center; padding: 4px 0; font-size: 15px; }
-.pick input { width: 16px; height: 16px; accent-color: #0A0A0A; flex: none; }
+.tick { display: flex; gap: 10px; align-items: center; padding: 4px 0; font-size: 15px; }
+.tick input, .tick__all { width: 16px; height: 16px; accent-color: #0A0A0A; flex: none; }
+.picks--groups { max-height: 264px; padding: 4px 12px; }
+.pgroup + .pgroup { border-top: 1px solid var(--line); }
+.pgroup__head { display: flex; gap: 10px; align-items: center; padding: 8px 0; cursor: pointer; list-style: none; font-size: 15px; font-weight: 600; }
+.pgroup__head::-webkit-details-marker { display: none; }
+.pgroup__head::after { content: ""; width: 7px; height: 7px; margin: 0 4px 3px 0; border-right: 1.5px solid var(--muted); border-bottom: 1.5px solid var(--muted); transform: rotate(45deg); transition: transform .15s; }
+.pgroup[open] > .pgroup__head::after { transform: rotate(-135deg); margin-bottom: -3px; }
+.pgroup__name { flex: 1; min-width: 0; }
+.pgroup__count { color: var(--muted); font-size: 13px; font-weight: 500; }
+.pgroup__body { padding: 0 0 8px 26px; display: flex; flex-direction: column; }
 .form-error { grid-column: 1 / -1; padding: 10px 14px; background: #FDECEC; color: #B4232A; border-radius: 10px; font-weight: 500; font-size: 14px; }
 
 /* drawer and dialog */

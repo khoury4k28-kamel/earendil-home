@@ -34,6 +34,15 @@ export const SOURCES = ["Slack", "Email", "Granola"];
 export const NOUN = { people: "person", teams: "team", goals: "target", milestones: "milestone", tasks: "task", projects: "project", deals: "deal", contacts: "contact" };
 
 const people = () => sortByName(state.people).map((p) => ({ value: p.id, label: p.name }));
+// People under the team they are in, for pickers that open team by team.
+// With no teams yet there are no groups and the picker is one plain list.
+const peopleByTeam = () => {
+  if (!state.teams.length) return [];
+  const of = (id) => sortByName(state.people.filter((p) => (p.team_id || null) === id)).map((p) => ({ value: p.id, label: p.name }));
+  const known = new Set(state.teams.map((t) => t.id));
+  const loose = sortByName(state.people.filter((p) => !known.has(p.team_id))).map((p) => ({ value: p.id, label: p.name }));
+  return [...sortByName(state.teams).map((t) => ({ label: t.name, options: of(t.id) })), { label: "No team", options: loose }];
+};
 const teams = () => sortByName(state.teams).map((t) => ({ value: t.id, label: t.name }));
 const deals = () => sortByName(state.deals).map((d) => ({ value: d.id, label: d.name }));
 const projects = () => sortByName(state.projects).map((p) => ({ value: p.id, label: p.name }));
@@ -92,7 +101,7 @@ export function fieldsFor(table, record = {}) {
       { key: "status", label: "Status", type: "select", required: true, options: PROJECT_STATUS },
       { key: "due", label: "Due", type: "date" },
       { key: "deal_id", label: "Under a deal", type: "select", options: deals(), blank: "No deal" },
-      { key: "people_ids", label: "Who's on it", type: "multi", options: people(), none: "Add people on the Teams tab first." },
+      { key: "people_ids", label: "Who's on it", type: "multi", options: people(), groups: peopleByTeam(), none: "Add people on the Teams tab first." },
       { key: "summary", label: "What it's for", type: "textarea" },
     ];
     case "deals": return [
@@ -105,7 +114,7 @@ export function fieldsFor(table, record = {}) {
       { key: "size_low", label: "Size, low (US$)", type: "number", placeholder: "30000000" },
       { key: "size_high", label: "Size, high (US$)", type: "number", placeholder: "100000000" },
       { key: "size_note", label: "About the size", wide: true, placeholder: "Estimate or firm? Where the figure comes from" },
-      { key: "people_ids", label: "Who's involved (team)", type: "multi", options: people(), none: "Add people first." },
+      { key: "people_ids", label: "Who's involved (team)", type: "multi", options: people(), groups: peopleByTeam(), none: "Add people first." },
       { key: "contact_ids", label: "Who's involved (outside)", type: "multi", options: contacts(), none: "Add contacts in the CRM first." },
       { key: "last_touch", label: "Last contact", type: "date" },
       { key: "summary", label: "Summary", type: "textarea" },
