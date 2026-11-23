@@ -85,7 +85,7 @@ export function onlineNow() {
   const me = byId("people", state.me.id);
   const out = [{ id: me?.id || null, name: me?.name || state.me.email || "You", me: true, active: true }];
   for (const o of state.online) {
-    if (o.email.toLowerCase() === mine) continue;
+    if (typeof o.email !== "string" || o.email.toLowerCase() === mine) continue;
     const p = personForEmail(o.email);
     if (p && out.some((x) => x.id === p.id)) continue;
     out.push({ id: p?.id || null, name: p?.name || o.email, me: false, active: o.active });

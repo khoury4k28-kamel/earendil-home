@@ -141,8 +141,13 @@ export function supabaseBackend(client, user) {
       const mine = () => ({ email: user.email, active: !document.hidden });
       ch.on("presence", { event: "sync" }, () => {
         const seen = new Map();
-        for (const m of Object.values(ch.presenceState()).flat()) {
-          if (m.email) seen.set(m.email, seen.get(m.email) || Boolean(m.active));
+        // What a tab says about itself is not trusted: an entry only counts
+        // if its address is text and matches the key it joined under.
+        for (const [key, metas] of Object.entries(ch.presenceState())) {
+          for (const m of metas) {
+            if (typeof m?.email !== "string" || m.email !== key) continue;
+            seen.set(key, seen.get(key) || m.active === true);
+          }
         }
         cb([...seen].map(([email, active]) => ({ email, active })));
       }).subscribe((status) => { if (status === "SUBSCRIBED") ch.track(mine()); });
