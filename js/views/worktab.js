@@ -39,18 +39,75 @@ function workList(mine) {
 }
 
 // ---------- the boxes ----------
+// A box is a small picture of the deal's own page: what it is, the next tasks
+// (each can be ticked here), the document that goes with it, who is on it and
+// how far along it is. Pressing anywhere else on the box opens its page.
+// Two tasks and a count: the box has a fixed height, and a task cut in half reads as a fault.
+const MAX_TASKS = 2;
+function boxTask(t, isNext) {
+  const meta = [t.status === "doing" && "In progress", t.due && "Due " + fmtDate(t.due)].filter(Boolean).join(" · ");
+  return h("li", { class: "wbox__task" },
+    h("button", {
+      class: "check", type: "button", role: "checkbox", "aria-checked": t.status === "doing" ? "mixed" : "false", "aria-label": "Mark " + t.title + " done",
+      onclick: (e) => { e.stopPropagation(); update("tasks", t.id, { status: "done" }); },
+    }),
+    h("div", { class: "wbox__tt" },
+      h("div", { class: "wbox__ttitle" }, isNext && h("span", { class: "next" }, "Next"), t.title),
+      meta && h("div", { class: "wbox__tmeta" }, meta)));
+}
+// RULE: a document only shows with its own thumbnail; if the picture fails the whole preview goes.
+function boxDoc(docs) {
+  const doc = docs[0];
+  const img = h("img", { src: fileUrl(doc.thumb), alt: "", width: doc.w, height: doc.h, loading: "lazy" });
+  const el = h("div", { class: "wbox__doc" },
+    h("span", { class: "wbox__thumb" }, img),
+    h("span", { class: "wbox__dtext" },
+      h("span", { class: "wbox__dtitle" }, doc.title),
+      h("span", { class: "wbox__dmeta" }, [doc.pages && plural(doc.pages, "page"), docs.length > 1 && `+${docs.length - 1} more`].filter(Boolean).join(" · "))));
+  img.addEventListener("error", () => { el.closest(".wbox")?.classList.remove("wbox--doc"); el.remove(); });
+  return el;
+}
 function box(w) {
   const r = w.rec;
   const isDeal = w.kind === "deal";
   const quiet = isDeal ? stalledDays(r) : null;
-  return h("a", { class: "wbox", href: "#work/" + key(w) },
+  const open = tasksOf(w.kind, w.id).filter(isOpen).sort(taskOrder);
+  // The picture is the deal's deck if it has one: wide pages before upright ones (a contract, a brochure).
+  const wide = (d) => (d.w > d.h ? 0 : 1);
+  const docs = isDeal ? docsFor(r).map((x) => x.doc).filter((d) => fileUrl(d.thumb)).sort((a, b) => wide(a) - wide(b)) : [];
+  const team = [...new Set([r.owner_id, ...(r.people_ids || [])])].map((id) => byId("people", id)).filter(Boolean);
+  // A contact that is just the organisation again adds nothing to the line above it.
+  const contacts = isDeal ? (r.contact_ids || []).map((id) => byId("contacts", id)).filter((c) => c && c.name !== r.organisation) : [];
+  const href = "#work/" + key(w);
+  return h("div", { class: "wbox" + (docs.length ? " wbox--doc" : "") + (quiet ? " wbox--quiet" : "") + (open.length > MAX_TASKS ? " wbox--busy wbox--full" : open.length > 1 ? " wbox--busy" : ""), onclick: () => { location.hash = href; } },
     h("div", { class: "wbox__top" },
       h("span", { class: "wbox__kind" }, workMark(w), isDeal ? stageLabel(r.stage) : projectStatusLabel(r.status)),
-      quiet && h("span", { class: "stalled", title: `No contact in ${quiet} days` }, `${quiet}d`)),
-    h("div", { class: "wbox__name" }, w.name),
-    h("div", { class: "wbox__sub" }, [isDeal && r.organisation, personName(r.owner_id) || "No owner"].filter(Boolean).join(" · ")),
-    h("div", { class: "wbox__next" }, w.next ? [h("span", { class: "next" }, "Next"), w.next.title] : w.total ? "All tasks done" : "No tasks yet"),
-    meter(w.done, w.total));
+      quiet ? h("span", { class: "stalled" }, `No contact in ${quiet} days`)
+        : isDeal && r.last_touch && h("span", null, "Last contact " + fmtDate(r.last_touch))),
+    h("a", { class: "wbox__name", href, onclick: (e) => e.stopPropagation() }, w.name),
+    h("div", { class: "wbox__sub" }, [isDeal && r.organisation, isDeal && r.region, !isDeal && r.due && "Due " + fmtDate(r.due)].filter(Boolean).join(" · ")),
+    h("div", { class: "wbox__body" },
+      h("div", { class: "wbox__main" },
+        r.summary && h("p", { class: "wbox__sum" }, r.summary),
+        open.length > 0
+          ? h("div", { class: "wbox__tasks" },
+            h("ul", null, open.slice(0, MAX_TASKS).map((t, i) => boxTask(t, i === 0))),
+            open.length > MAX_TASKS && h("div", { class: "wbox__moret" }, `+${plural(open.length - MAX_TASKS, "more task")}`))
+          : h("div", { class: "wbox__tasks wbox__tasks--none" },
+            h("span", null, w.total ? "All tasks done" : isDeal ? "No next step" : "No tasks yet"), h("span", { class: "link" }, "Add a task"))),
+      docs.length > 0 && boxDoc(docs)),
+    h("div", { class: "wbox__foot" },
+      team.length > 0 && h("span", { class: "wbox__who" },
+        h("span", { class: "wbox__avs" }, team.slice(0, 4).map((p) => avatar(p.name, "s"))),
+        team.length === 1 ? team[0].name : plural(team.length, "person", "people")),
+      contacts.length > 0 && h("span", { class: "wbox__who wbox__who--c" }, contacts.length === 1 ? contacts[0].name : plural(contacts.length, "contact")),
+      meter(w.done, w.total)));
+}
+// The slot left open by an odd number of boxes: start the next one from it.
+function newBox(add) {
+  return h("div", { class: "wbox wbox--new" },
+    h("div", { class: "wbox__newt" }, "Start something new"),
+    h("div", { class: "wbox__newb" }, add.slice(1).reverse()));
 }
 const addButtons = (belongs = {}) => [
   h("button", { class: "btn", type: "button", onclick: () => editRecord("tasks", null, { status: "todo", owner_id: meId() || null, ...belongs }) }, "Add task"),
@@ -67,7 +124,8 @@ function boxes() {
         meId() && seg("Whose work", [["mine", "Mine"], ["all", "Everyone"]], whose(), (v) => { scope = v; }),
         addButtons())),
     live.length + (showFinished ? finished.length : 0) > 0
-      ? h("div", { class: "wboxes" }, live.map(box), showFinished && finished.map(box))
+      ? h("div", { class: "wboxes" }, live.map(box), showFinished && finished.map(box),
+        (live.length + (showFinished ? finished.length : 0)) % 2 === 1 && newBox(addButtons()))
       : h("div", { class: "empty" }, h("div", null, h("b", null, mine ? "No deals or projects of yours yet." : "No deals or projects yet."))),
     finished.length > 0 && h("button", { class: "more", type: "button", onclick: () => { showFinished = !showFinished; refresh(); } },
       showFinished ? "Hide finished" : `${finished.length} finished · Show`));

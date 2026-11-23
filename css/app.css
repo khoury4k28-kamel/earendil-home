@@ -252,29 +252,72 @@ button.card:hover, a.card:hover { border-color: var(--ink); }
   .prow .num { text-align: left; }
 }
 /* Deals & Tasks: a box per deal or project; inside a box, its tasks and their subtasks. */
-.wboxes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: minmax(260px, calc((100vh - 168px) / 2)); gap: 20px; }
+.wboxes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); grid-auto-rows: minmax(370px, calc((100vh - 168px) / 2)); gap: 20px; }
 .page--boxes { padding-bottom: 28px; max-width: none; }
-.wbox { display: flex; flex-direction: column; gap: 8px; padding: 28px 30px 26px; border: 1px solid var(--line); border-radius: var(--r-l); background: var(--bg); text-decoration: none; color: inherit; min-width: 0; overflow: hidden; transition: border-color 0.12s, box-shadow 0.12s; }
-.wbox:hover { border-color: var(--ink); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.06); }
-.wbox__top { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 15px; color: var(--muted); }
+.wbox { display: flex; flex-direction: column; gap: 6px; padding: 24px 28px 22px; border: 1px solid var(--line-2); border-radius: var(--r-l); background: var(--bg); color: inherit; min-width: 0; overflow: hidden; cursor: pointer; transition: border-color 0.12s, box-shadow 0.12s; }
+.wbox:hover { border-color: var(--faint); box-shadow: 0 6px 20px rgba(0, 0, 0, 0.06); }
+.wbox--quiet { border-color: color-mix(in srgb, var(--red) 35%, var(--line-2)); }
+.wbox__top { display: flex; justify-content: space-between; align-items: center; gap: 10px; font-size: 14px; color: var(--muted); }
 .wbox__kind { display: inline-flex; align-items: center; gap: 8px; font-weight: 500; }
 .wbox__kind .dot, .wbox__kind .pmark { margin: 0; }
-.wbox__name { font-size: 28px; margin-top: 4px; font-weight: 650; line-height: 1.25; letter-spacing: -0.01em; overflow-wrap: anywhere; }
-.wbox__sub { font-size: 16px; color: var(--muted); }
-.wbox__next { flex: 1; margin-top: 14px; font-size: 18px; line-height: 1.5; color: var(--text-2); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; }
+.wbox__name { font-size: 24px; margin-top: 2px; font-weight: 650; line-height: 1.25; letter-spacing: -0.01em; color: inherit; text-decoration: none; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.wbox:hover .wbox__name { text-decoration: underline; text-underline-offset: 4px; text-decoration-color: var(--line-2); }
+.wbox__sub { font-size: 14.5px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wbox__sub:empty { display: none; }
+/* The middle takes whatever height is left; the head and the foot always show. */
+.wbox__body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 26px; margin-top: 12px; overflow: hidden; }
+.wbox--doc .wbox__body { grid-template-columns: minmax(0, 1fr) minmax(180px, 36%); }
+.wbox__main { display: flex; flex-direction: column; gap: 14px; min-width: 0; min-height: 0; }
+.wbox__sum { margin: 0; font-size: 15px; line-height: 1.5; color: var(--text-2); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 4; -webkit-box-orient: vertical; flex: none; }
+.wbox:not(.wbox--doc) .wbox__sum { max-width: 68ch; }
+.wbox__tasks { flex: none; padding: 4px 14px; border-radius: var(--r-m); background: var(--soft); }
+.wbox__tasks ul { margin: 0; padding: 0; list-style: none; }
+.wbox__task { display: flex; align-items: flex-start; gap: 11px; padding: 9px 0; }
+.wbox__task + .wbox__task { border-top: 1px solid var(--line); }
+.wbox__task .check { transform: translateY(2px); }
+.wbox__tt { flex: 1; min-width: 0; }
+.wbox__ttitle { font-size: 15px; font-weight: 500; line-height: 1.4; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.wbox__task + .wbox__task .wbox__ttitle { -webkit-line-clamp: 1; font-weight: 400; color: var(--text-2); }
+.wbox__tmeta, .wbox__moret { font-size: 13px; color: var(--muted); }
+.wbox__moret { padding: 0 0 9px 30px; }
+.wbox__tasks--none { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 12px 14px; font-size: 14.5px; color: var(--muted); }
+.wbox .next { font-size: 11px; vertical-align: 1px; }
+.wbox__doc { display: flex; flex-direction: column; gap: 8px; min-width: 0; min-height: 0; }
+.wbox__thumb { display: block; flex: 0 1 auto; min-height: 0; border: 1px solid var(--line); border-radius: var(--r-m); overflow: hidden; background: var(--soft); aspect-ratio: 16 / 9; }
+.wbox__thumb img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: top center; }
+.wbox__dtext { display: flex; flex-direction: column; min-width: 0; flex: none; }
+.wbox__dtitle { font-size: 13.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wbox__dmeta { font-size: 13px; color: var(--muted); }
+.wbox__foot { display: flex; align-items: center; gap: 8px 18px; flex: none; margin-top: 12px; padding-top: 14px; border-top: 1px solid var(--line); font-size: 14px; color: var(--text-2); }
+.wbox__who { display: inline-flex; align-items: center; gap: 8px; min-width: 0; white-space: nowrap; }
+.wbox__who--c { color: var(--muted); overflow: hidden; text-overflow: ellipsis; flex: 0 1 auto; display: inline-block; }
+.wbox__avs { display: inline-flex; }
+.wbox__avs .avatar + .avatar { margin-left: -7px; box-shadow: 0 0 0 2px var(--bg); }
+.wbox__foot .meter { flex: 1 0 150px; margin: 0 0 0 auto; max-width: 300px; }
+.wbox--new { align-items: center; justify-content: center; gap: 14px; border-style: dashed; cursor: default; }
+.wbox--new:hover { border-color: var(--line-2); box-shadow: none; }
+.wbox__newt { font-size: 17px; font-weight: 500; color: var(--muted); }
+.wbox__newb { display: flex; gap: 8px; }
+/* On a short screen the box keeps what is acted on (the tasks) and lets the reading go first. */
+.wbox--busy .wbox__sum { -webkit-line-clamp: 2; }
+.wbox--full .wbox__sum { display: none; }
+@media (min-height: 1080px) { .wbox--full .wbox__sum { display: -webkit-box; } }
+@media (max-height: 900px) { .wbox__sum { -webkit-line-clamp: 2; } .wbox--busy .wbox__sum { display: none; } }
 .meter { display: flex; align-items: center; gap: 12px; }
 .meter__bar { flex: 1; height: 6px; border-radius: 3px; background: var(--soft-2); overflow: hidden; }
 .meter__bar > span { display: block; height: 100%; border-radius: 3px; background: var(--ink); }
 .meter__n { flex: none; font-size: 13px; color: var(--muted); }
-.wbox .meter { margin-top: 12px; }
-.wbox .meter__bar { height: 8px; border-radius: 4px; }
-.wbox .meter__n { font-size: 15px; }
-.wbox .next { font-size: 13px; vertical-align: 2px; }
+.wbox .meter__bar { height: 6px; }
+.wbox .meter__n { font-size: 13.5px; }
+@media (max-width: 1180px) {
+  .wbox--doc .wbox__body { grid-template-columns: minmax(0, 1fr); }
+  .wbox__doc { display: none; }
+}
 @media (max-width: 860px) {
   .wboxes { grid-template-columns: minmax(0, 1fr); grid-auto-rows: auto; }
-  .wbox { padding: 20px; min-height: 200px; }
-  .wbox__name { font-size: 22px; }
-  .wbox__next { font-size: 16px; }
+  .wbox { padding: 20px; }
+  .wbox__name { font-size: 21px; }
+  .wbox--new { display: none; }
 }
 .winside { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(320px, 1fr); gap: 20px; align-items: start; }
 .winside__main { display: flex; flex-direction: column; gap: 14px; min-width: 0; }
