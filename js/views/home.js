@@ -1,7 +1,7 @@
 // Home is personal: each person sees their own. It answers, in order, what
 // people open a home page to find out:
 //   1. What matters today?          -> Today: the three things that most need a person
-//   2. What should I do next?       -> Tasks: to-dos and deal follow-ups, mine first
+//   2. What should I do next?       -> Your deals and projects: a card each, with the task to do next
 //   3. What changed while I was out -> Since your last visit
 //   4. What is coming?              -> Coming up
 // Who is on what, and where, is on the Teams tab.
@@ -22,7 +22,7 @@ import {
   editRecord, openDeal, openPerson, openContact, dealIssues, stalledDays, pickPerson,
   logContact, takeDeal, finishTask, clearToConfirm, openProject, progressBar, workTag, workMark, openWork,
 } from "../detail.js";
-import { workOf, nextStep, allWork, isLive, isActive, isOn } from "../work.js";
+import { workOf, nextStep, allWork, isLive, isActive, isOn, tasksOf, taskOrder } from "../work.js";
 import { stageLabel } from "../schema.js";
 import { findCountry, findCountries, personPlace } from "../places.js";
 
@@ -184,7 +184,7 @@ function workItems() {
     if (w && !isActive(w.kind, w.rec)) continue;
     items.push({
       key: "task:" + t.id, type: "task", belongs, title: t.title, open: w ? () => toWork(w.kind, w.id) : edit, tick: () => finishTask(t),
-      quick: !w, tag: workTag(t), workName: w?.name,
+      quick: !w, work: w ? w.kind + ":" + w.id : null, tag: workTag(t), workName: w?.name,
       score: overdue ? 100 + Math.min(30, daysSince(t.due)) : soon ? 70 - left : 55,
       action: belongs === "open" ? (meId() ? ["Take it", () => takeTask(t)] : ["Assign", edit]) : ["Done", () => finishTask(t)],
       meta: [belongs !== "mine" && personName(t.owner_id), overdue ? red(`Overdue since ${fmtDate(t.due)}`) : t.due && `Due ${fmtDate(t.due)}`,
@@ -286,60 +286,87 @@ function seg(label, options, current, set) {
   return h("div", { class: "seg seg--small", role: "group", "aria-label": label }, options.map(([value, text]) =>
     h("button", { type: "button", "aria-pressed": String(current === value), onclick: () => { set(value); refresh(); } }, text)));
 }
-function tasks(rest, snoozedCount) {
-  const mine = rest.filter((it) => it.belongs === "mine");
-  const whose = meId() ? scope || "mine" : "all";
-  const pool = whose === "mine" ? mine : rest;
-  const items = pool;
-  const shown = showAll ? items : items.slice(0, TASK_LIMIT);
-  return section(`${whose === "mine" ? "Your tasks" : "Tasks"} · ${items.length}`,
-    h("div", { class: "actions" },
-      snoozedCount > 0 && h("button", { class: "more more--head", type: "button", onclick: () => setSnoozed({}) }, `${snoozedCount} snoozed · Show`),
-      h("a", { class: "link small", href: "#work" }, "All"),
-      meId() && seg("Whose tasks", [["mine", `Mine ${mine.length}`], ["all", `Everyone ${rest.length}`]], whose, (v) => { scope = v; })),
-    shown.length > 0 && taskRows(shown),
-    moreBtn(items.length - shown.length, showAll, () => { showAll = !showAll; refresh(); }));
+// ---------- your work: one card per deal or project ----------
+// A deal is a project with a pipeline, and its next step is its next open
+// task, so the two lists are one: each card is a deal or project with the task
+// to do next on it. Ticking that task brings up the one after it. Tasks that
+// sit outside these cards follow in a short list.
+function steps(done, total) {
+  if (!total) return null;
+  if (total > 12) return h("span", { class: "wcard__steps wcard__steps--bar", role: "img", "aria-label": `${done} of ${total} tasks done` },
+    h("i", { class: "on", style: `flex:${done}` }), h("i", { style: `flex:${total - done}` }));
+  return h("span", { class: "wcard__steps", role: "img", "aria-label": `${done} of ${total} tasks done` },
+    Array.from({ length: total }, (_, i) => h("i", { class: i < done ? "on" : i === done ? "now" : null })));
 }
-
-// ---------- deals and projects: one list ----------
-// A deal is a project with a pipeline, so they sit together: each row has its
-// progress and the task to do next.
-function work() {
-  const mineOnly = Boolean(meId()) && (scope || "mine") === "mine";
+function workCard(w, today) {
+  const r = w.rec;
+  const go = () => toWork(w.kind, w.id);
+  const stop = (fn) => (e) => { e.stopPropagation(); fn(); };
+  const open = tasksOf(w.kind, w.id).filter((t) => t.status !== "done").sort(taskOrder);
+  const next = open[0];
+  const paused = w.kind === "project" && r.status === "paused";
+  const finished = w.kind === "project" && r.status === "done";
+  const quiet = w.kind === "deal" ? stalledDays(r) : null;
+  const late = next?.due && next.due < today;
+  const owner = !isOn(r, meId()) && personName(r.owner_id);
+  return h("li", { class: "wcard" + (finished ? " wcard--done" : "") + (quiet ? " wcard--quiet" : ""), onclick: go },
+    h("div", { class: "wcard__top" },
+      workMark(w),
+      h("span", { class: "wcard__stage" }, dots([w.kind === "deal" ? stageLabel(r.stage) : finished ? "Finished" : paused ? "On hold" : "Project", owner])),
+      w.total > 0 && h("span", { class: "wcard__n num" }, `${w.done}/${w.total}`)),
+    h("a", { class: "wcard__name", href: `#work/${w.kind}:${w.id}`, onclick: (e) => e.stopPropagation() }, w.name),
+    steps(w.done, w.total),
+    quiet && h("div", { class: "wcard__alert" },
+      h("span", { class: "stalled" }, `No contact in ${quiet} days`),
+      h("button", { class: "btn btn--small", type: "button", onclick: stop(() => logContact("deals", r)) }, "Log contact")),
+    !finished && (next
+      ? h("div", { class: "wcard__next" },
+        h("button", { class: "check", type: "button", role: "checkbox", "aria-checked": "false", "aria-label": "Done: " + next.title, onclick: stop(() => finishTask(next)) }),
+        h("div", { class: "wcard__task" },
+          h("div", { class: "wcard__label" }, dots(["Next", next.status === "doing" && "In progress",
+            next.due && (late ? red(`Overdue since ${fmtDate(next.due)}`) : `Due ${fmtDate(next.due)}`)])),
+          h("div", { class: "wcard__title" }, next.title)))
+      : h("div", { class: "wcard__next wcard__next--none" },
+        h("span", null, w.total ? "All tasks done" : w.kind === "deal" ? "No next step" : "No tasks yet"),
+        h("span", { class: "link small" }, "Add one"))),
+    open.length > 1 && h("div", { class: "wcard__then" },
+      h("span", { class: "wcard__thent" }, "Then: " + open[1].title),
+      open.length > 2 && h("span", { class: "wcard__more" }, `+${open.length - 2}`)));
+}
+function yourWork(rest, snoozedCount) {
+  const whose = meId() ? scope || "mine" : "all";
+  const mineOnly = whose === "mine";
+  const today = todayISO();
   const pool = allWork().filter((w) => !mineOnly || isOn(w.rec, meId()));
   const live = pool.filter((w) => isLive(w.kind, w.rec));
   const finished = pool.filter((w) => w.kind === "project" && w.rec.status === "done");
-  const rank = (w) => (w.kind === "project" && w.rec.status === "done" ? 2 : w.kind === "project" && w.rec.status === "paused" ? 1 : 0);
+  // What needs a person comes first: gone quiet, then no next step, then by the next due date.
+  const rank = (w) => (w.kind === "project" && w.rec.status === "done" ? 5 : w.kind === "project" && w.rec.status === "paused" ? 4
+    : w.kind === "deal" && stalledDays(w.rec) ? 0 : !w.next ? 1 : 2);
   const list = [...live, ...(workDone ? finished : [])].sort((a, b) => rank(a) - rank(b) ||
     String(a.next?.due || "9").localeCompare(String(b.next?.due || "9")) || a.name.localeCompare(b.name));
   const shown = workAll ? list : list.slice(0, WORK_LIMIT);
   const kinds = new Set(list.map((w) => w.kind));
   const name = kinds.size === 1 ? (kinds.has("deal") ? "deals" : "projects") : "deals and projects";
-  const today = todayISO();
+  // Tasks no card covers: ones that belong to nothing, or to work that isn't in this list.
+  const inList = new Set(list.map((w) => w.kind + ":" + w.id));
+  const loose = rest.filter((it) => it.type === "task" && (mineOnly ? it.belongs === "mine" : true) && !(it.work && inList.has(it.work)));
+  const looseShown = showAll ? loose : loose.slice(0, TASK_LIMIT);
+  const mineCount = allWork().filter((w) => isLive(w.kind, w.rec) && isOn(w.rec, meId())).length;
+  const allCount = allWork().filter((w) => isLive(w.kind, w.rec)).length;
   return section(`${mineOnly ? "Your " + name : name[0].toUpperCase() + name.slice(1)} · ${list.length}`,
     h("div", { class: "actions" },
+      snoozedCount > 0 && h("button", { class: "more more--head", type: "button", onclick: () => setSnoozed({}) }, `${snoozedCount} snoozed · Show`),
       finished.length > 0 && h("button", { class: "more more--head", type: "button", onclick: () => { workDone = !workDone; refresh(); } },
         workDone ? "Hide finished" : `${finished.length} finished · Show`),
-      h("a", { class: "link small", href: "#work" }, "All")),
-    shown.length > 0 && h("ul", null, shown.map((w) => {
-      const r = w.rec;
-      const done = rank(w) === 2;
-      const quiet = w.kind === "deal" ? stalledDays(r) : null;
-      const late = w.kind === "project" && r.status === "active" && r.due && r.due < today;
-      return h("li", { class: "arow wrow" + (done ? " done" : "") },
-        workMark(w),
-        h("button", { class: "arow__main", type: "button", onclick: () => toWork(w.kind, w.id) },
-          h("div", { class: "arow__title" }, w.name),
-          h("div", { class: "arow__text" }, dots([
-            rank(w) === 1 && "On hold", done && "Finished",
-            !isOn(r, meId()) && personName(r.owner_id),
-            !done && (w.next ? `Next: ${w.next.title}` : w.kind === "deal" ? (r.next_step ? `Next: ${r.next_step}` : "No next step") : w.total ? "All tasks done" : "No tasks yet"),
-            late ? red(`Due ${fmtDate(r.due)}`) : w.kind === "project" && r.due && !done && `Due ${fmtDate(r.due)}`]))),
-        quiet && h("span", { class: "stalled", title: `No contact in ${quiet} days` }, `${quiet}d`),
-        w.total > 0 && h("span", { class: "prow__n num" }, `${w.done}/${w.total}`),
-        progressBar(w.done, w.total));
-    })),
-    moreBtn(list.length - shown.length, workAll, () => { workAll = !workAll; refresh(); }));
+      h("a", { class: "link small", href: "#work" }, "All"),
+      meId() && seg("Whose work", [["mine", `Mine ${mineCount}`], ["all", `Everyone ${allCount}`]], whose, (v) => { scope = v; })),
+    shown.length > 0 && h("ul", { class: "wcards" }, shown.map((w) => workCard(w, today))),
+    moreBtn(list.length - shown.length, workAll, () => { workAll = !workAll; refresh(); }),
+    loose.length > 0 && h("div", { class: "wloose" },
+      h("div", { class: "wloose__title" }, `Other tasks · ${loose.length}`),
+      taskRows(looseShown),
+      moreBtn(loose.length - looseShown.length, showAll, () => { showAll = !showAll; refresh(); })));
 }
 
 function takeProject(p) {
@@ -567,7 +594,7 @@ export function render() {
     h("div", { class: "home__head page-head__text" }, h("h1", { class: "h1" }, greeting()), pulse(), yourUpdate()),
     h("div", { class: "home__main" },
       claim(),
-      today(top), tasks(rest, hiddenCount), work(), upForGrabs(rest), changes(), goals(),
+      today(top), yourWork(rest, hiddenCount), upForGrabs(rest), changes(), goals(),
       comingUp(new Set(top.filter((it) => it.type === "date").map((it) => it.id))), tidy(),
       h("button", { class: "missionline", type: "button", onclick: openAbout, title: "Mission, values and what we sell" }, (mission || "Write the mission") + " →")),
     news);
