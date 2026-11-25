@@ -13,7 +13,8 @@
 //               in the hub until a person applies or dismisses them
 // Most messages are ordinary talk and produce nothing.
 //
-// Direct messages are never read: Slack only sends what is posted in channels
+// Only messages from people on the company's own email domain are read; a
+// guest's or an outside partner's are skipped. Direct messages are never read: Slack only sends what is posted in channels
 // the app was invited to, and anything else is dropped below as well. The text
 // of a message is not stored.
 //
@@ -153,6 +154,8 @@ type Records = {
 };
 // The teammate behind a Slack address: by the email on their profile, else by
 // the name in the address (initials, first name, first.last…), when only one fits.
+// Only ever called with an address on the company's own domain (see handle),
+// so an outside address that happens to share someone's initials can't match.
 function personFor(email: string, people: Person[]) {
   if (!email) return null;
   const exact = people.find((p) => (p.email || "").toLowerCase() === email);
@@ -273,6 +276,15 @@ function clean(r: ReadingT, rec: Records, day: string) {
 async function handle(ev: SlackEvent) {
   const key = Deno.env.get("ANTHROPIC_API_KEY");
   if (!key) { console.error("slack: reader not set up"); return; }
+
+  // Only the team's own people are read. Someone whose Slack address is not on
+  // the company's domain (a guest, or a partner in a shared channel) is
+  // skipped: an outsider's words never become notes or suggestions in the hub.
+  // The company's domain is the one this function's own hub account is on.
+  const domain = (Deno.env.get("HUB_SLACK_EMAIL") || "").split("@")[1]?.toLowerCase();
+  const who = await user(ev.user!);
+  if (!domain || !who.email.endsWith("@" + domain)) return;
+
   const db = await signedIn();
 
   // Claims the message. Slack sends some messages twice; the second gets nothing back.
@@ -281,8 +293,7 @@ async function handle(ev: SlackEvent) {
   const records = rec as Records | null;
   if (!records || (!records.deals.length && !records.projects.length && !records.contacts.length)) return;
 
-  const [who, place, link, earlier, text] = await Promise.all([
-    user(ev.user!),
+  const [place, link, earlier, text] = await Promise.all([
     slack("conversations.info", { channel: ev.channel! }),
     slack("chat.getPermalink", { channel: ev.channel!, message_ts: ev.ts! }),
     before(ev),

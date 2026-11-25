@@ -463,7 +463,6 @@ function changes() {
     if (!rec || String(a.created_at) <= from) continue;
     if ((a.author_email || "").toLowerCase() === myEmail && myEmail) continue;
     if (!a.author_email && a.author === state.me.label) continue;
-    if (a.source === "slack" && state.me.name && a.author === state.me.name) continue;   // what I said in Slack isn't news to me
     seen.add(a.entity_type + ":" + a.entity_id);
     rows.push({ at: a.created_at, mine: isMine(a.entity_type, rec), title: rec.name, text: a.body, by: a.author, open: () => kind[1](rec.id) });
   }
