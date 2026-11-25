@@ -13,10 +13,12 @@
 //
 // Needs one secret, set in the project's Edge Function settings:
 //   ANTHROPIC_API_KEY
+// and, only if its logs say "public key not set":
+//   HUB_PUBLISHABLE_KEY   the project's Publishable key
 
 import { createClient } from "npm:@supabase/supabase-js@2";
-import Anthropic from "npm:@anthropic-ai/sdk";
-import { zodOutputFormat } from "npm:@anthropic-ai/sdk/helpers/zod";
+import Anthropic from "npm:@anthropic-ai/sdk@1.14.0";
+import { zodOutputFormat } from "npm:@anthropic-ai/sdk@1.14.0/helpers/zod";
 import { z } from "npm:zod@^3.25.0";
 
 const MODEL = "claude-opus-5-5";
@@ -77,7 +79,12 @@ unmatched: names of companies, deals or people the entry mentions that you could
 
 Only use ids that appear in the records you were given.`;
 
-const isDate = (s: unknown): s is string => typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s);
+// A real calendar day, written YYYY-MM-DD ("2026-02-31" is not one).
+function isDate(s: unknown): s is string {
+  if (typeof s !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const d = new Date(s + "T00:00:00Z");
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
+}
 const clip = (s: unknown, n: number) => String(s ?? "").trim().slice(0, n);
 
 // Nothing the model returns is trusted as it stands: every id must be one that
@@ -118,13 +125,17 @@ function clean(p: ProposalT, ids: Record<string, Set<string>>, today: string) {
   return { ideas, actions, unmatched: p.unmatched.map((u) => clip(u, 80)).filter(Boolean).slice(0, 10) };
 }
 
+// The project's public key, under whichever name this project provides it.
+const publicKey = () => Deno.env.get("SUPABASE_ANON_KEY") || Deno.env.get("SUPABASE_PUBLISHABLE_KEY") || Deno.env.get("HUB_PUBLISHABLE_KEY") || "";
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return reply(405, { error: "method" });
 
   const auth = req.headers.get("Authorization") || "";
   if (!auth.startsWith("Bearer ")) return reply(401, { error: "signed_out" });
-  const db = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, {
+  if (!publicKey()) { console.error("public key not set"); return reply(503, { error: "not_set_up" }); }
+  const db = createClient(Deno.env.get("SUPABASE_URL")!, publicKey(), {
     global: { headers: { Authorization: auth } },
     auth: { persistSession: false, autoRefreshToken: false },
   });
@@ -142,8 +153,10 @@ Deno.serve(async (req) => {
   if (!logId) return reply(400, { error: "bad_request" });
 
   // The database only hands over the caller's own entries.
-  const { data: log } = await db.from("logs").select("id, body, person_id").eq("id", logId).maybeSingle();
+  const { data: log } = await db.from("logs").select("id, body, person_id, status").eq("id", logId).maybeSingle();
   if (!log) return reply(404, { error: "not_found" });
+  // An entry whose updates are already in is not read again.
+  if (log.status === "applied") return reply(409, { error: "already_applied" });
   const fail = async (status: number, error: string) => {
     await db.from("logs").update({ status: "failed" }).eq("id", logId);
     return reply(status, { error });
@@ -208,7 +221,7 @@ Deno.serve(async (req) => {
     return fail(502, "reader_failed");
   }
 
-  const { error: saveError } = await db.from("logs").update({ proposal, status: "read" }).eq("id", logId);
-  if (saveError) return reply(500, { error: "save_failed" });
+  const { data: saved, error: saveError } = await db.from("logs").update({ proposal, status: "read" }).eq("id", logId).neq("status", "applied").select("id");
+  if (saveError || !saved?.length) return reply(500, { error: "save_failed" });
   return reply(200, { proposal });
 });

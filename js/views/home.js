@@ -452,7 +452,8 @@ function changes() {
   const from = lastVisit();
   if (!from) return null;
   const myEmail = (state.me.email || "").toLowerCase();
-  const who = (email) => state.people.find((p) => (p.email || "").toLowerCase() === String(email || "").toLowerCase())?.name || String(email || "").split("@")[0];
+  const who = (email) => state.people.find((p) => (p.email || "").toLowerCase() === String(email || "").toLowerCase())?.name
+    || (/^hub-slack@/i.test(String(email || "")) ? "Slack" : String(email || "").split("@")[0]);   // the Slack feed's own account
   const kinds = { deal: ["deals", openDeal], person: ["people", openPerson], contact: ["contacts", openContact], project: ["projects", openProject] };
   const isMine = (type, rec) => (type === "deal" ? onDeal(rec) : type === "project" ? isOn(rec, meId()) : type === "task" ? rec.owner_id === meId() : type === "contact" ? rec.owner_id === meId() : false) && Boolean(meId());
   const rows = [];

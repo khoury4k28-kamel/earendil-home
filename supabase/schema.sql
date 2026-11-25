@@ -548,11 +548,11 @@ begin
       values (v_type, v_id, left(btrim(r->>'text'), 600), v_author, 'slack', v_link);
   end loop;
 
-  -- A contact date only ever moves forward, and never past today.
+  -- A contact date only ever moves forward, and never past today (where the author is).
   for r in select value from jsonb_array_elements(coalesce(p->'touches', '[]'::jsonb)) limit 12 loop
     v_type := r->>'target_type'; v_id := r->>'target_id';
     begin
-      v_date := least((r->>'date')::date, current_date);
+      v_date := least((r->>'date')::date, current_date + 1);   -- +1: the author may be a time zone ahead of this clock
     exception when others then v_date := current_date;
     end;
     v_date := coalesce(v_date, current_date);

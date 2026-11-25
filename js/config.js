@@ -7,6 +7,11 @@ export const config = {
   supabaseUrl: "https://wycqeywhtcfvexoogsei.supabase.co",
   supabaseKey: "sb_publishable_wgh6Fn-dXYNhXKlZPa36QA_2nPHrhwU",
 
+  // The Log's reader is an Edge Function. Supabase's editor gives each function
+  // an address of its own choosing, which can differ from the name shown in
+  // its list: this is the last part of that address (its URL in the list).
+  readLogFunction: "swift-task",
+
   // Sign-in is for the team's own addresses only.
   emailDomain: "earendilrobotics.com",
 

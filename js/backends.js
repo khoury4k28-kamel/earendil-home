@@ -2,6 +2,7 @@
 // screens don't know which one is in use.
 
 import { TABLES } from "./store.js";
+import { config } from "./config.js";
 
 const EMPTY = { settings: {}, people: [], teams: [], goals: [], milestones: [], tasks: [], projects: [], deals: [], contacts: [], activity: [] };
 
@@ -137,7 +138,7 @@ export function supabaseBackend(client, user) {
     // Has the reader work out what a log entry means. It saves its suggestion
     // on the entry and returns it; a failure carries a short code.
     async readLog(id, today) {
-      const { data, error } = await client.functions.invoke("read-log", { body: { log_id: id, today } });
+      const { data, error } = await client.functions.invoke(config.readLogFunction || "read-log", { body: { log_id: id, today } });
       if (error) {
         let code = "unreachable";
         try { code = (await error.context.json()).error || code; } catch { /* no body: the function wasn't reached */ }

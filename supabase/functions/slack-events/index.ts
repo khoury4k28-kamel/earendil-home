@@ -28,12 +28,13 @@
 //   HUB_SLACK_EMAIL        the function's own hub account
 //   HUB_SLACK_PASSWORD
 //   ANTHROPIC_API_KEY      the reader
+//   HUB_PUBLISHABLE_KEY    only if the logs say "public key not set": the project's Publishable key
 // Turn "Verify JWT" off for this function: Slack does not sign in, it signs
 // each call, and that signature is checked first thing.
 
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
-import Anthropic from "npm:@anthropic-ai/sdk";
-import { zodOutputFormat } from "npm:@anthropic-ai/sdk/helpers/zod";
+import Anthropic from "npm:@anthropic-ai/sdk@1.14.0";
+import { zodOutputFormat } from "npm:@anthropic-ai/sdk@1.14.0/helpers/zod";
 import { z } from "npm:zod@^3.25.0";
 
 const MODEL = "claude-opus-5-5";
@@ -73,7 +74,8 @@ type SlackEvent = {
 function wanted(ev: SlackEvent) {
   if (ev.type !== "message") return false;
   // Edits, joins, deletions and the like carry a subtype. A message with a file is still a message.
-  if (ev.subtype && ev.subtype !== "file_share") return false;
+  // So is a thread reply that was also sent to the channel.
+  if (ev.subtype && ev.subtype !== "file_share" && ev.subtype !== "thread_broadcast") return false;
   if (ev.bot_id || !ev.user || !ev.channel || !ev.ts) return false;
   if (ev.channel_type !== "channel" && ev.channel_type !== "group") return false;   // never direct messages
   const text = String(ev.text || "");
@@ -90,14 +92,23 @@ async function slack(method: string, params: Record<string, string>) {
     return data && data.ok ? data : null;
   } catch { return null; }
 }
-type SlackUser = { name: string; email: string };
+type SlackUser = { name: string; email: string; tz: string };
+// The company's own email domain: the one this function's hub account is on.
+const teamDomain = () => (Deno.env.get("HUB_SLACK_EMAIL") || "").split("@")[1]?.toLowerCase() || "";
+const onTeam = (u: SlackUser) => Boolean(teamDomain() && u.email.endsWith("@" + teamDomain()));
 const users = new Map<string, SlackUser>();
 async function user(id: string): Promise<SlackUser> {
   const kept = users.get(id);
   if (kept) return kept;
   const data = await slack("users.info", { user: id });
-  const found = { name: String(data?.user?.real_name || data?.user?.profile?.display_name || ""), email: String(data?.user?.profile?.email || "").toLowerCase() };
-  if (data) users.set(id, found);
+  const found = {
+    name: String(data?.user?.real_name || data?.user?.profile?.display_name || ""),
+    email: String(data?.user?.profile?.email || "").toLowerCase(),
+    tz: String(data?.user?.tz || ""),
+  };
+  // Only a complete answer is kept: a failed lookup is tried again next time.
+  if (data && found.email) users.set(id, found);
+  else console.error("slack: no email for a user", data ? "(is the users:read.email scope granted?)" : "(lookup failed: check the bot token)");
   return found;
 }
 // Slack writes mentions and links as codes. This turns them into plain words.
@@ -118,16 +129,23 @@ async function plain(text: string) {
 async function before(ev: SlackEvent) {
   const inThread = ev.thread_ts && ev.thread_ts !== ev.ts;
   const data = inThread
-    ? await slack("conversations.replies", { channel: ev.channel!, ts: ev.thread_ts!, latest: ev.ts!, inclusive: "false", limit: "12" })
+    ? await slack("conversations.replies", { channel: ev.channel!, ts: ev.thread_ts!, latest: ev.ts!, inclusive: "false", limit: "100" })
     : await slack("conversations.history", { channel: ev.channel!, latest: ev.ts!, oldest: String(Number(ev.ts) - 3600), inclusive: "false", limit: "4" });
-  const list: SlackEvent[] = (data?.messages || []).filter((m: SlackEvent) => m.ts !== ev.ts && !m.bot_id && typeof m.text === "string" && m.text);
+  const list: SlackEvent[] = (data?.messages || []).filter((m: SlackEvent) => m.ts !== ev.ts && !m.bot_id && !m.subtype && m.user && typeof m.text === "string" && m.text);
   list.sort((a, b) => Number(a.ts) - Number(b.ts));
   const out: string[] = [];
-  for (const m of list.slice(-8)) out.push(`${m.user ? (await user(m.user)).name || "Someone" : "Someone"}: ${(await plain(String(m.text))).slice(0, 600)}`);
+  for (const m of list.slice(-8)) {
+    const said = await user(m.user!);
+    // An outsider's words are not passed on, even as context.
+    if (!onTeam(said)) continue;
+    out.push(`${said.name || "Someone"}: ${(await plain(String(m.text))).slice(0, 600)}`);
+  }
   return out;
 }
 
 // ---------- the hub ----------
+// The project's public key, under whichever name this project provides it.
+const publicKey = () => Deno.env.get("SUPABASE_ANON_KEY") || Deno.env.get("SUPABASE_PUBLISHABLE_KEY") || Deno.env.get("HUB_PUBLISHABLE_KEY") || "";
 // Signed in once and kept while this copy of the function stays warm.
 let hub: SupabaseClient | null = null;
 let hubUntil = 0;
@@ -136,7 +154,8 @@ async function signedIn() {
   const email = Deno.env.get("HUB_SLACK_EMAIL");
   const password = Deno.env.get("HUB_SLACK_PASSWORD");
   if (!email || !password) throw new Error("hub account not set");
-  const client = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_ANON_KEY")!, { auth: { persistSession: false, autoRefreshToken: false } });
+  if (!publicKey()) throw new Error("public key not set");
+  const client = createClient(Deno.env.get("SUPABASE_URL")!, publicKey(), { auth: { persistSession: false, autoRefreshToken: false } });
   const { data, error } = await client.auth.signInWithPassword({ email, password });
   if (error || !data.session) throw new Error("hub sign-in failed");
   hub = client;
@@ -218,7 +237,12 @@ For each suggestion, "why" is a few words in your own phrasing on what in the me
 
 Match names generously on context and spelling, but only use ids that appear in the records you were given.`;
 
-const isDate = (s: unknown): s is string => typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s));
+// A real calendar day, written YYYY-MM-DD ("2026-02-31" is not one).
+function isDate(s: unknown): s is string {
+  if (typeof s !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const d = new Date(s + "T00:00:00Z");
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
+}
 const clip = (s: unknown, n: number) => String(s ?? "").trim().slice(0, n);
 
 // Nothing the reader returns is trusted as it stands: every id must be one that
@@ -281,9 +305,8 @@ async function handle(ev: SlackEvent) {
   // the company's domain (a guest, or a partner in a shared channel) is
   // skipped: an outsider's words never become notes or suggestions in the hub.
   // The company's domain is the one this function's own hub account is on.
-  const domain = (Deno.env.get("HUB_SLACK_EMAIL") || "").split("@")[1]?.toLowerCase();
   const who = await user(ev.user!);
-  if (!domain || !who.email.endsWith("@" + domain)) return;
+  if (!onTeam(who)) return;
 
   const db = await signedIn();
 
@@ -301,7 +324,12 @@ async function handle(ev: SlackEvent) {
   ]);
   const person = personFor(who.email, records.people);
   const author = person?.name || who.name || "Someone";
-  const day = new Date(Number(ev.ts) * 1000).toISOString().slice(0, 10);
+  // The day it was written, where the author is: "today" at nine in the evening
+  // in Boston is not yet tomorrow.
+  const at = new Date(Number(ev.ts) * 1000);
+  let day = at.toISOString().slice(0, 10);
+  try { if (who.tz) day = new Intl.DateTimeFormat("en-CA", { timeZone: who.tz, year: "numeric", month: "2-digit", day: "2-digit" }).format(at); } catch { /* an unknown zone: keep the UTC day */ }
+  if (!isDate(day)) day = at.toISOString().slice(0, 10);
   const me = person?.id || null;
 
   const forReader = {
