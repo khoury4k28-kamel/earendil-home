@@ -8,8 +8,9 @@ import { stageLabel, categoryLabel, projectStatusLabel } from "./schema.js";
 
 let open = false;
 
-function items(extra) {
+function items(extra, first) {
   const create = [
+    ...first,
     ["New deal", () => editRecord("deals", null, { stage: "lead", kind: "customer", people_ids: [], contact_ids: [] })],
     ["New contact", () => editRecord("contacts", null, { kind: "person", category: "partner", status: "In contact" })],
     ["New task", () => editRecord("tasks", null, { status: "todo", owner_id: state.me.id || null })],
@@ -31,10 +32,10 @@ function items(extra) {
   return { create: [...create, ...extra.map(([label, run]) => ({ group: "Go to", label, sub: "", run }))], go, records };
 }
 
-export function openPalette(extra = []) {
+export function openPalette(extra = [], first = []) {
   if (open) return;
   open = true;
-  const all = items(extra);
+  const all = items(extra, first);
   let shown = [];
   let index = 0;
 

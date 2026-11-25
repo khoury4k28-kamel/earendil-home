@@ -33,7 +33,7 @@ export async function previewBackend(seedUrl, { documents, radar } = {}) {
     mode: "preview",
     seedMissing,
     me: { email: null, label: "Preview" },
-    async loadAll() { return { ...seed, documentsEditable: true }; },
+    async loadAll() { return { ...seed, logs: [], logsReady: true, slack_suggestions: [], slackReady: true, documentsEditable: true }; },
     // Files added in preview live in this browser tab only.
     async signFiles() { return {}; },
     async putFile() {},
@@ -112,6 +112,10 @@ export function supabaseBackend(client, user) {
       const rows = await ok(client.from("settings").select("*"));
       out.settings = Object.fromEntries(rows.map((r) => [r.key, r.value]));
       const [radar, docs] = await Promise.all([liveRadar(client).catch(() => null), liveDocuments(client).catch(() => null)]);
+      // The Log is an extra too: until its table exists, the hub opens without it.
+      try { out.logs = await ok(client.from("logs").select("*")); out.logsReady = true; } catch { out.logs = []; out.logsReady = false; }
+      // So is the Slack feed: what it suggests waits in its own table.
+      try { out.slack_suggestions = await ok(client.from("slack_suggestions").select("*").eq("status", "open")); out.slackReady = true; } catch { out.slack_suggestions = []; out.slackReady = false; }
       if (radar) out.radar = radar;
       if (docs) { out.documents = docs.documents; out.documentsUpdated = docs.updated || null; out.documentsEditable = docs.editable; }
       return out;
@@ -130,6 +134,17 @@ export function supabaseBackend(client, user) {
     update: (table, id, patch) => ok(client.from(table).update(patch).eq("id", id)),
     remove: (table, id) => ok(client.from(table).delete().eq("id", id)),
     setSetting: (key, value) => ok(client.from("settings").upsert({ key, value })),
+    // Has the reader work out what a log entry means. It saves its suggestion
+    // on the entry and returns it; a failure carries a short code.
+    async readLog(id, today) {
+      const { data, error } = await client.functions.invoke("read-log", { body: { log_id: id, today } });
+      if (error) {
+        let code = "unreachable";
+        try { code = (await error.context.json()).error || code; } catch { /* no body: the function wasn't reached */ }
+        throw Object.assign(new Error("The entry couldn't be read"), { code });
+      }
+      return data.proposal;
+    },
     // Who has the hub open right now. Each open tab announces itself on a
     // shared channel and the service drops it when the tab closes; nothing is
     // written to the database. "active" is false while the tab is in the background.

@@ -12,6 +12,7 @@ import {
 } from "./store.js";
 import { workOf, tasksOf, progress, nextStep, taskOrder, workFor, isLive, toDeal } from "./work.js";
 import { openForm } from "./form.js";
+import { slackLink } from "./slack.js";
 import { fieldsFor, NOUN, STAGES, stageLabel, categoryLabel, PROJECT_STATUS, projectStatusLabel } from "./schema.js";
 
 // ---------- add / edit any record ----------
@@ -149,13 +150,24 @@ export function taskList(tasks, { showOwner = true, showWork = true, markNext = 
   }));
 }
 
+// Under a note: who wrote it, when, and where it came from. A note taken from
+// Slack links back to the message.
+const VIA = { slack: "Slack", log: "the Log" };
+export function noteMeta(n) {
+  const via = n.source && !["manual", "system"].includes(n.source) ? "via " + (VIA[n.source] || n.source) : "";
+  const link = n.source === "slack" && slackLink(n.link);
+  const lead = [n.author, fmtDateTime(n.created_at)].filter(Boolean).join(" · ");
+  return h("div", { class: "row__meta", title: n.source === "slack" ? null : n.author_email || null }, lead, via && " · ",
+    link ? h("a", { class: "link", href: link, target: "_blank", rel: "noopener noreferrer" }, via) : via);
+}
+
 function notesBlock(type, id) {
   const notes = notesFor(type, id);
   return block("Notes",
     quickAdd(`note-${type}-${id}`, "Add a note", (body) => addNote(type, id, body)),
     notes.length > 0 && h("div", null, notes.map((n) => h("div", { class: "note" },
       h("div", { class: "prose" }, n.body),
-      h("div", { class: "row__meta", title: n.author_email || null }, [n.author, fmtDateTime(n.created_at), n.source && !["manual", "system"].includes(n.source) && "via " + n.source].filter(Boolean).join(" · "))))));
+      noteMeta(n)))));
 }
 
 function tasksBlock(tasks, idKey, defaults, opts) {

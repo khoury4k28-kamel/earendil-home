@@ -7,7 +7,7 @@
 import { h, refresh, quickAdd, fmtDate, fmtDateTime, fmtRange, plural, avatar, kv } from "../ui.js";
 import { state, create, update, personName, byId, sortByName, notesFor, addNote, fileUrl, projectsForDeal } from "../store.js";
 import { stageLabel, projectStatusLabel, categoryLabel } from "../schema.js";
-import { editRecord, openWork, workMark, stalledDays, personChip, openContact } from "../detail.js";
+import { editRecord, openWork, workMark, stalledDays, personChip, openContact, noteMeta } from "../detail.js";
 import { allWork, isLive, isOn, tasksOf, subtasksOf, subtasksReady, addSubtask, taskOrder, progress, docsFor, docsReady } from "../work.js";
 
 let scope = null;        // "mine" or "all"; mine once the hub knows who is looking
@@ -256,7 +256,7 @@ function notesBlock(type, id) {
     quickAdd(`wk-note-${type}-${id}`, "Add a note", (body) => addNote(type, id, body)),
     notes.slice(0, 5).map((n) => h("div", { class: "note" },
       h("div", { class: "prose" }, n.body),
-      h("div", { class: "row__meta" }, [n.author, fmtDateTime(n.created_at)].filter(Boolean).join(" · ")))),
+      noteMeta(n))),
     notes.length > 5 && h("div", { class: "small muted" }, `${notes.length - 5} earlier in the details panel`));
 }
 function aboutBlock(w) {

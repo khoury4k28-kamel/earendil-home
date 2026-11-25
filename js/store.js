@@ -14,6 +14,8 @@ export const state = {
   documentsEditable: false,                                    // can documents be added and changed here?
   fileUrls: {},                                                // storage path -> an address the browser can open
   online: [],                                                  // teammates with the hub open now: { email, active }
+  logs: [], logsReady: false,                                  // the viewer's own log entries, and whether the database can hold them
+  slack_suggestions: [], slackReady: false,                    // updates Slack messages imply, waiting for a person's yes or no
   radar: null, radarBase: "",                                  // { updated, items }: the week's headlines, and where their pictures are
 };
 
@@ -69,6 +71,10 @@ export async function init(b) {
   state.documentsBase = data.documentsBase || "";
   state.documentsUpdated = data.documentsUpdated || null;
   state.documentsEditable = Boolean(data.documentsEditable);
+  state.logs = data.logs || [];
+  state.logsReady = Boolean(data.logsReady);
+  state.slack_suggestions = data.slack_suggestions || [];
+  state.slackReady = Boolean(data.slackReady);
   state.radar = data.radar || null;
   state.radarBase = data.radarBase || "";
   await signDocuments();
@@ -97,7 +103,7 @@ function applyRemote({ table, eventType, new: row, old }) {
   if (table === "settings") {
     if (eventType === "DELETE") delete state.settings[old.key];
     else state.settings = { ...state.settings, [row.key]: row.value };
-  } else if (TABLES.includes(table) || table === "documents") {
+  } else if (TABLES.includes(table) || table === "documents" || table === "logs" || table === "slack_suggestions") {
     if (eventType === "DELETE") state[table] = state[table].filter((r) => r.id !== old.id);
     else if (state[table].some((r) => r.id === row.id)) state[table] = state[table].map((r) => (r.id === row.id ? row : r));
     else state[table] = [...state[table], row];
@@ -162,6 +168,15 @@ export async function saveSetting(key, value) {
     toast("That change couldn't be saved. Check your connection and try again.");
   }
 }
+// Changes a row on this screen only, for something the database already holds.
+export function setLocal(table, id, patch) {
+  state[table] = state[table].map((r) => (r.id === id ? { ...r, ...patch } : r));
+  emit();
+}
+// Asks the reader what a log entry means. Null where there is no reader (preview).
+export const canReadLogs = () => Boolean(backend?.readLog);
+export const readLog = (id, today) => backend.readLog(id, today);
+
 export function addNote(entityType, entityId, body) {
   // author and created_at are sent so the note shows at once; the database
   // replaces both with the signed-in person and its own clock.

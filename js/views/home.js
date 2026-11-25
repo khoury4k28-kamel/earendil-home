@@ -25,8 +25,11 @@ import {
 import { workOf, nextStep, allWork, isLive, isActive, isOn, tasksOf, taskOrder } from "../work.js";
 import { stageLabel } from "../schema.js";
 import { findCountry, findCountries, personPlace } from "../places.js";
+import { openSuggestions, suggestionRow } from "../slack.js";
 
 let showAll = false;
+let reconnectAll = false;
+const QUIET_DAYS = 30;   // the same month a deal gets before it counts as gone quiet
 let moreDates = false;
 let scope = null;        // "mine" | "all"; null = decide from who is signed in
 let openTidy = null;     // which "Tidy up" row is open
@@ -36,6 +39,7 @@ let workAll = false;
 let workDone = false;    // also list finished projects
 const WORK_LIMIT = 6;
 let radarAll = false;
+let slackAll = false;
 const RADAR_LIMIT = 6;
 const TASK_LIMIT = 5;
 const SNOOZE_DAYS = 7;
@@ -206,6 +210,19 @@ function workItems() {
         tick: () => openAt(d.id, "task-deal"), action: ["Add next step", () => openAt(d.id, "task-deal")], meta: about });
     }
   }
+  // People gone quiet: a contact nobody has been in touch with for a month.
+  // It goes to whoever knows them; with nobody named, anyone can pick it up.
+  // A contact on a deal that has itself gone quiet is covered by that deal.
+  for (const c of state.contacts) {
+    if (c.status !== "In contact" || !c.last_touch) continue;
+    const quiet = daysSince(c.last_touch);
+    if (quiet <= QUIET_DAYS) continue;
+    if (state.deals.some((d) => (d.contact_ids || []).includes(c.id) && stalledDays(d))) continue;
+    const belongs = meId() && c.owner_id === meId() ? "mine" : personName(c.owner_id) ? "theirs" : "open";
+    items.push({ key: `contact:${c.id}:quiet`, type: "contact", belongs, title: `Reconnect with ${c.name}`, open: () => openContact(c.id),
+      score: 60 + Math.min(9, quiet / 10), tick: () => logContact("contacts", c), action: ["Log contact", () => logContact("contacts", c)],
+      meta: [red(`No contact in ${quiet} days`), c.organisation !== c.name && c.organisation, belongs === "theirs" && personName(c.owner_id)] });
+  }
   for (const m of state.milestones) {
     if (m.team_id || m.status === "done" || !parseDate(m.date)) continue;
     const left = -daysSince(m.date);
@@ -369,6 +386,32 @@ function yourWork(rest, snoozedCount) {
       moreBtn(loose.length - looseShown.length, showAll, () => { showAll = !showAll; refresh(); })));
 }
 
+// ---------- from Slack: updates waiting for a yes or no ----------
+// Notes from Slack go straight onto their deal. A change to a record (a task
+// done or added, a stage moved, a new contact) waits here until someone
+// applies it. Mine: what I said, or what is about work I am on.
+function fromSlack() {
+  const mineOnly = Boolean(meId()) && (scope || "mine") === "mine";
+  const rows = openSuggestions(mineOnly);
+  const others = mineOnly ? openSuggestions(false).length - rows.length : 0;
+  if (!rows.length && !others) return null;
+  const shown = slackAll ? rows : rows.slice(0, 4);
+  return section(`From Slack · ${rows.length}`,
+    others > 0 && h("button", { class: "more more--head", type: "button", onclick: () => { scope = "all"; refresh(); } }, `${others} for teammates · Show`),
+    shown.length > 0 && h("ul", null, shown.map(suggestionRow)),
+    moreBtn(rows.length - shown.length, slackAll, () => { slackAll = !slackAll; refresh(); }));
+}
+
+// ---------- people to get back in touch with ----------
+function reconnect(rest) {
+  const rows = rest.filter((it) => it.type === "contact" && it.belongs !== "theirs");
+  if (!rows.length) return null;
+  const shown = reconnectAll ? rows : rows.slice(0, 4);
+  return section(`Reconnect · ${rows.length}`, null,
+    taskRows(shown),
+    moreBtn(rows.length - shown.length, reconnectAll, () => { reconnectAll = !reconnectAll; refresh(); }));
+}
+
 function takeProject(p) {
   const before = p.owner_id || null;
   update("projects", p.id, { owner_id: meId() });
@@ -420,6 +463,7 @@ function changes() {
     if (!rec || String(a.created_at) <= from) continue;
     if ((a.author_email || "").toLowerCase() === myEmail && myEmail) continue;
     if (!a.author_email && a.author === state.me.label) continue;
+    if (a.source === "slack" && state.me.name && a.author === state.me.name) continue;   // what I said in Slack isn't news to me
     seen.add(a.entity_type + ":" + a.entity_id);
     rows.push({ at: a.created_at, mine: isMine(a.entity_type, rec), title: rec.name, text: a.body, by: a.author, open: () => kind[1](rec.id) });
   }
@@ -594,7 +638,7 @@ export function render() {
     h("div", { class: "home__head page-head__text" }, h("h1", { class: "h1" }, greeting()), pulse(), yourUpdate()),
     h("div", { class: "home__main" },
       claim(),
-      today(top), yourWork(rest, hiddenCount), upForGrabs(rest), changes(), goals(),
+      today(top), fromSlack(), yourWork(rest, hiddenCount), reconnect(rest), upForGrabs(rest), changes(), goals(),
       comingUp(new Set(top.filter((it) => it.type === "date").map((it) => it.id))), tidy(),
       h("button", { class: "missionline", type: "button", onclick: openAbout, title: "Mission, values and what we sell" }, (mission || "Write the mission") + " →")),
     news);
