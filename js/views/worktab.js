@@ -8,7 +8,7 @@ import { h, refresh, toast, ago, quickAdd, fmtDate, fmtDateTime, fmtRange, plura
 import { state, create, update, personName, byId, sortByName, notesFor, addNote, fileUrl, projectsForDeal } from "../store.js";
 import { pinButton, isPinned } from "../pins.js";
 import { stageLabel, projectStatusLabel, categoryLabel } from "../schema.js";
-import { editRecord, addProject, openWork, workMark, stalledDays, personChip, openContact, openPerson, noteMeta, pickPerson } from "../detail.js";
+import { editRecord, addProject, openWork, workMark, stalledDays, personChip, openContact, openPerson, noteMeta } from "../detail.js";
 import { allWork, workOf, isLive, isOn, tasksOf, subtasksOf, subtasksReady, addSubtask, taskOrder, progress, docsFor, docsReady } from "../work.js";
 
 let scope = null;        // "mine" or "all"; mine once the hub knows who is looking
@@ -147,34 +147,79 @@ function tick(t) {
   });
 }
 const taskMeta = (t, owner = true) => [owner && personName(t.owner_id), t.status === "doing" && "In progress", t.due && "Due " + fmtDate(t.due)].filter(Boolean).join(" · ");
-// Who does a task, chosen on the row. It then shows on that person's Home.
+// Who does a task: the person's emblem on the row. A team member's chip can be
+// dragged onto the row to assign it; pressing the emblem offers the same choice
+// from the browser's own list (for a keyboard, or to take the person off).
+function setOwner(t, v) {
+  const before = t.owner_id || null;
+  if ((v || null) === before) return;
+  update("tasks", t.id, { owner_id: v || null });
+  toast(v ? `Assigned to ${personName(v)}. It shows on their Home.` : "Nobody is on it now.", ["Undo", () => update("tasks", t.id, { owner_id: before })]);
+}
 function assign(t) {
-  return pickPerson({ id: `wk-own-${t.id}`, value: t.owner_id, blank: "Assign", label: "Who does: " + t.title, onChange: (v) => {
-    const before = t.owner_id || null;
-    update("tasks", t.id, { owner_id: v });
-    toast(v ? `Assigned to ${personName(v)}. It shows on their Home.` : "Nobody is on it now.", ["Undo", () => update("tasks", t.id, { owner_id: before })]);
-  } });
+  const who = byId("people", t.owner_id);
+  const label = who ? `${who.name} does this. Press to change` : "Assign: drag a team member here, or press to choose";
+  const sel = h("select", { id: `wk-own-${t.id}`, "aria-label": "Who does: " + t.title, title: label },
+    h("option", { value: "" }, who ? "Nobody" : "Assign"),
+    sortByName(state.people).map((p) => h("option", { value: p.id, selected: p.id === t.owner_id }, p.name)));
+  sel.addEventListener("click", (e) => e.stopPropagation());
+  sel.addEventListener("change", () => setOwner(t, sel.value || null));
+  return h("span", { class: "asg" + (who ? "" : " asg--none") }, who && avatar(who.name, "s"), sel);
+}
+// The person being dragged from the Team panel, while the drag lasts.
+let dragPerson = null;
+function draggablePerson(id) {
+  const chip = personChip(id);
+  if (!chip) return null;
+  chip.draggable = true;
+  chip.classList.add("person-chip--drag");
+  chip.title = "Drag onto a task to assign it";
+  chip.addEventListener("dragstart", (e) => {
+    dragPerson = id;
+    e.dataTransfer.effectAllowed = "copy";
+    e.dataTransfer.setData("text/plain", chip.textContent);
+    document.body.classList.add("dragging-person");
+  });
+  chip.addEventListener("dragend", () => {
+    dragPerson = null;
+    document.body.classList.remove("dragging-person");
+    document.querySelectorAll(".drop-on").forEach((el) => el.classList.remove("drop-on"));
+  });
+  return chip;
+}
+function dropTarget(el, t) {
+  el.addEventListener("dragover", (e) => { if (!dragPerson) return; e.preventDefault(); e.stopPropagation(); e.dataTransfer.dropEffect = "copy"; el.classList.add("drop-on"); });
+  el.addEventListener("dragleave", (e) => { if (!el.contains(e.relatedTarget)) el.classList.remove("drop-on"); });
+  el.addEventListener("drop", (e) => {
+    if (!dragPerson) return;
+    e.preventDefault(); e.stopPropagation();
+    const id = dragPerson;
+    dragPerson = null;
+    document.body.classList.remove("dragging-person");
+    setOwner(t, id);
+  });
+  return el;
 }
 function subRow(s) {
   const meta = taskMeta(s, false);
-  return h("li", { class: "row srow" + (s.status === "done" ? " done" : "") }, tick(s),
+  return dropTarget(h("li", { class: "row srow" + (s.status === "done" ? " done" : "") }, tick(s),
     h("button", { class: "row__main rowbtn", type: "button", onclick: () => editRecord("tasks", s) },
       h("div", { class: "row__title" }, s.title), meta && h("div", { class: "row__meta" }, meta)),
-    assign(s), pinButton("task", s.id, s.title));
+    assign(s), pinButton("task", s.id, s.title)), s);
 }
 function taskRow(t, isNext) {
   const subs = subtasksOf(t.id);
   const subsDone = subs.filter((s) => !isOpen(s)).length;
   const meta = taskMeta(t, false);
   return h("li", { class: "tkrow" + (t.status === "done" ? " done" : "") },
-    h("div", { class: "row tkrow__line" }, tick(t),
+    dropTarget(h("div", { class: "row tkrow__line" }, tick(t),
       h("button", { class: "row__main rowbtn", type: "button", onclick: () => editRecord("tasks", t) },
         h("div", { class: "row__title" }, isNext && h("span", { class: "next" }, "Next"), t.title),
         meta && h("div", { class: "row__meta" }, meta)),
       assign(t), pinButton("task", t.id, t.title),
       subs.length > 0 && h("span", { class: "tkrow__n num", title: `${subsDone} of ${subs.length} subtasks done` }, `${subsDone}/${subs.length}`),
       subs.length > 0 && h("span", { class: "bar", role: "img", "aria-label": `${subsDone} of ${subs.length} subtasks done` },
-        h("span", { style: `width:${Math.round((subsDone / subs.length) * 100)}%` }))),
+        h("span", { style: `width:${Math.round((subsDone / subs.length) * 100)}%` }))), t),
     (subs.length > 0 || (subtasksReady() && isOpen(t))) && h("div", { class: "subs" },
       subs.length > 0 && h("ul", { class: "rows" }, subs.map(subRow)),
       subtasksReady() && isOpen(t) && quickAdd(`wk-sub-${t.id}`, "Add a subtask", (title) => addSubtask(t, title))));
@@ -225,13 +270,13 @@ function plusAdder(label, options, onPick) {
   const sel = h("select", { "aria-label": label, title: label },
     h("option", { value: "" }, label), options.map(([value, text]) => h("option", { value }, text)));
   sel.addEventListener("change", () => sel.value && onPick(sel.value));
-  return h("span", { class: "plus-add" }, h("span", { "aria-hidden": "true" }, "+"), sel);
+  return h("span", { class: "plus-add" }, sel);
 }
 function teamBlock(table, r) {
   const ids = [...new Set([r.owner_id, ...(r.people_ids || [])])].filter((id) => byId("people", id));
   const others = sortByName(state.people.filter((p) => !ids.includes(p.id))).map((p) => [p.id, p.name]);
   return gathered("Team", ids.length,
-    h("div", { class: "chips" }, ids.map((id) => personChip(id)),
+    h("div", { class: "chips chips--team" }, ids.map((id) => draggablePerson(id)),
       plusAdder("Add a team member", others, (id) => update(table, r.id, { people_ids: [...(r.people_ids || []), id] }))));
 }
 function contactsBlock(d) {

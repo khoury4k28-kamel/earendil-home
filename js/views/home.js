@@ -3,7 +3,7 @@
 //   1. What matters today?          -> Today: the three things that most need a person
 //   2. What should I do next?       -> Your deals and projects: a card each, with the task to do next
 //   3. What changed while I was out -> Since your last visit
-//   4. What is coming?              -> Coming up
+//   4. What is coming?              -> Coming up (down the right side, under the Radar)
 // Who is on what, and where, is on the Teams tab.
 // Down the right side runs the Radar: the week's outside news that bears on
 // the business, with the viewer's own markets first.
@@ -404,6 +404,46 @@ function yourWork(rest, snoozedCount) {
       moreBtn(loose.length - looseShown.length, showAll, () => { showAll = !showAll; refresh(); })));
 }
 
+// ---------- tasks that have been given to someone ----------
+// Mine: tasks and subtasks given to me. Team: every given task on the projects
+// I am on, mine and my teammates'. Everyone: every given task in the hub. Tasks
+// nobody has are not here: they show on their project and under Up for grabs.
+let taskScope = null;    // "mine" | "team" | "all"
+let tasksAll = false;
+const ASSIGNED_LIMIT = 6;
+function assignedTasks() {
+  const me = meId();
+  const today = todayISO();
+  const given = state.tasks.filter((t) => t.status !== "done" && byId("people", t.owner_id));
+  if (!given.length) return null;
+  const onMine = (t) => { const w = workOf(t); return Boolean(w && isOn(w.rec, me)); };
+  const lists = { mine: given.filter((t) => t.owner_id === me), team: given.filter(onMine), all: given };
+  const whose = me ? taskScope || "mine" : "all";
+  const pin = (t) => isPinned("task", t.id);
+  const list = [...lists[whose]].sort((a, b) => Number(pin(b)) - Number(pin(a)) || taskOrder(a, b));
+  const shown = tasksAll ? list : list.slice(0, ASSIGNED_LIMIT);
+  const go = (t) => { const w = workOf(t); if (w) toWork(w.kind, w.id); else editRecord("tasks", t); };
+  const none = { mine: "Nothing has been given to you.", team: "Nothing has been given out on your projects.", all: "" }[whose];
+  return section(`Tasks · ${list.length}`,
+    me && seg("Whose tasks", [["mine", `My tasks ${lists.mine.length}`], ["team", `Team tasks ${lists.team.length}`], ["all", `Everyone ${lists.all.length}`]],
+      whose, (v) => { taskScope = v; tasksAll = false; }),
+    shown.length > 0
+      ? h("ul", null, shown.map((t) => {
+        const late = t.due && t.due < today;
+        const who = byId("people", t.owner_id);
+        return h("li", { class: "arow trow" },
+          h("button", { class: "check", type: "button", role: "checkbox", "aria-checked": "false", "aria-label": "Done: " + t.title, onclick: () => finishTask(t) }),
+          h("div", { class: "arow__main arow__main--row", onclick: () => go(t) },
+            h("button", { class: "arow__go arow__title", type: "button" }, t.title),
+            h("div", { class: "arow__sub" }, workTag(t), h("span", null, dots([t.status === "doing" && "In progress",
+              t.due && (late ? red(`Overdue since ${fmtDate(t.due)}`) : `Due ${fmtDate(t.due)}`)])))),
+          whose !== "mine" && h("span", { class: "arow__who", title: who.name }, avatar(who.name, "s"), h("span", null, who.id === me ? "You" : who.name.split(" ")[0])),
+          pinButton("task", t.id, t.title));
+      }))
+      : h("p", { class: "muted small" }, none),
+    moreBtn(list.length - shown.length, tasksAll, () => { tasksAll = !tasksAll; refresh(); }));
+}
+
 // ---------- from Slack: updates waiting for a yes or no ----------
 // Notes from Slack go straight onto their deal. A change to a record (a task
 // done or added, a stage moved, a new contact) waits here until someone
@@ -652,12 +692,15 @@ export function render() {
   const hiddenCount = Object.keys(snoozed()).length;
   const mission = state.settings.mission;
   const news = radar();
+  // The dates sit down the right side, under the Radar. With no Radar there is
+  // no right side, and they stay in the main column.
+  const dates = comingUp(new Set(top.filter((it) => it.type === "date").map((it) => it.id)));
   return h("main", { class: "page page--home" + (news ? " page--rail" : "") },
     h("div", { class: "home__head page-head__text" }, h("h1", { class: "h1" }, greeting()), pulse(), yourUpdate()),
     h("div", { class: "home__main" },
       claim(),
-      today(top), fromSlack(), yourWork(rest, hiddenCount), reconnect(rest), upForGrabs(rest), changes(), goals(),
-      comingUp(new Set(top.filter((it) => it.type === "date").map((it) => it.id))), tidy(),
+      today(top), fromSlack(), yourWork(rest, hiddenCount), assignedTasks(), reconnect(rest), upForGrabs(rest), changes(), goals(),
+      !news && dates, tidy(),
       h("button", { class: "missionline", type: "button", onclick: openAbout, title: "Mission, values and what we sell" }, (mission || "Write the mission") + " →")),
-    news);
+    news && h("div", { class: "home__rail" }, news, dates));
 }
