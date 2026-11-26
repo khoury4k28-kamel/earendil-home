@@ -1022,7 +1022,6 @@ button.tidy__title:hover { text-decoration: underline; text-underline-offset: 3p
 .wbox__top .pinbtn, .wcard__top .pinbtn { margin: -5px -6px -5px 0; }
 .wcard__top .wcard__n { margin-left: auto; }
 .wcard__next .pinbtn, .wbox__task .pinbtn { align-self: flex-start; margin: -3px -4px 0 0; }
-.pinned { margin-bottom: 20px; }
 
 /* Add project: one question, two answers. */
 .choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding-top: 6px; }

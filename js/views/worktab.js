@@ -5,7 +5,7 @@
 // gathers from here.
 
 import { h, refresh, toast, ago, quickAdd, fmtDate, fmtDateTime, fmtRange, plural, avatar, kv } from "../ui.js";
-import { state, create, update, personName, byId, sortByName, notesFor, addNote, fileUrl, projectsForDeal, pinned } from "../store.js";
+import { state, create, update, personName, byId, sortByName, notesFor, addNote, fileUrl, projectsForDeal } from "../store.js";
 import { pinButton, isPinned } from "../pins.js";
 import { stageLabel, projectStatusLabel, categoryLabel } from "../schema.js";
 import { editRecord, addProject, openWork, workMark, stalledDays, personChip, openContact, openPerson, noteMeta, pickPerson } from "../detail.js";
@@ -120,21 +120,6 @@ const addButtons = (belongs = {}) => [
   h("button", { class: "btn", type: "button", onclick: () => editRecord("tasks", null, { status: "todo", owner_id: meId() || null, ...belongs }) }, "Add task"),
   h("button", { class: "btn btn--primary", type: "button", onclick: () => addProject((kind, row) => go(kind + ":" + row.id)) }, "Add project"),
 ];
-// Pinned tasks, above the boxes: each opens the deal or project it sits in.
-function pinnedTasks() {
-  const list = pinned("task").filter(isOpen);
-  if (!list.length) return null;
-  return h("section", { class: "panel pinned" },
-    h("div", { class: "panel__head" }, h("h2", { class: "eyebrow" }, `Pinned tasks · ${list.length}`)),
-    h("div", { class: "panel__body" }, h("ul", { class: "rows" }, list.map((t) => {
-      const w = workOf(t);
-      const meta = [w?.name, taskMeta(t)].filter(Boolean).join(" · ");
-      return h("li", { class: "row" }, tick(t),
-        h("button", { class: "row__main rowbtn", type: "button", onclick: () => (w ? go(key(w)) : editRecord("tasks", t)) },
-          h("div", { class: "row__title" }, t.title), meta && h("div", { class: "row__meta" }, meta)),
-        pinButton("task", t.id, t.title));
-    }))));
-}
 function boxes() {
   const mine = whose() === "mine";
   const { live, finished } = workList(mine);
@@ -144,7 +129,6 @@ function boxes() {
       h("div", { class: "actions" },
         meId() && seg("Whose work", [["mine", "Mine"], ["all", "Everyone"]], whose(), (v) => { scope = v; }),
         addButtons())),
-    pinnedTasks(),
     live.length + (showFinished ? finished.length : 0) > 0
       ? h("div", { class: "wboxes" }, live.map(box), showFinished && finished.map(box),
         (live.length + (showFinished ? finished.length : 0)) % 2 === 1 && newBox(addButtons()))

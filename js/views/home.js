@@ -16,7 +16,7 @@ import {
   h, avatar, fmtDate, parseDate, todayISO, todayLabel, daysSince, ago, plural, refresh, toast, quickAdd, inlineEdit,
   openDrawer, drawerFrame, block, kv,
 } from "../ui.js";
-import { state, saveSetting, isOpenDeal, create, update, byId, personName, setViewAs, pinned } from "../store.js";
+import { state, saveSetting, isOpenDeal, create, update, byId, personName, setViewAs } from "../store.js";
 import { pinButton, isPinned } from "../pins.js";
 import { openForm } from "../form.js";
 import {
@@ -44,6 +44,7 @@ let slackAll = false;
 const RADAR_LIMIT = 6;
 const TASK_LIMIT = 5;
 const SNOOZE_DAYS = 7;
+const PIN_BOOST = 50;    // lifts a pinned item above anything not overdue, and about level with one just overdue
 
 // ---------- company reference, in a side panel ----------
 function editCompany() {
@@ -188,7 +189,7 @@ function workItems() {
     const w = workOf(t);
     if (w && !isActive(w.kind, w.rec)) continue;
     items.push({
-      key: "task:" + t.id, type: "task", taskId: t.id, belongs, title: t.title, open: w ? () => toWork(w.kind, w.id) : edit, tick: () => finishTask(t),
+      key: "task:" + t.id, type: "task", taskId: t.id, belongs, pinned: isPinned("task", t.id) || Boolean(w && isPinned(w.kind, w.id)), title: t.title, open: w ? () => toWork(w.kind, w.id) : edit, tick: () => finishTask(t),
       quick: !w, work: w ? w.kind + ":" + w.id : null, tag: workTag(t), workName: w?.name,
       score: overdue ? 100 + Math.min(30, daysSince(t.due)) : soon ? 70 - left : 55,
       action: belongs === "open" ? (meId() ? ["Take it", () => takeTask(t)] : ["Assign", edit]) : ["Done", () => finishTask(t)],
@@ -201,7 +202,7 @@ function workItems() {
     const quiet = stalledDays(d);
     if (!quiet && nextStep(d)) continue;
     const belongs = dealBelongs(d);
-    const base = { type: "deal", belongs, open: () => toWork("deal", d.id) };
+    const base = { type: "deal", belongs, open: () => toWork("deal", d.id), pinned: isPinned("deal", d.id) };
     const about = [d.organisation !== d.name && d.organisation, stageLabel(d.stage), belongs !== "mine" && personName(d.owner_id)];
     if (quiet) {
       items.push({ ...base, key: `deal:${d.id}:stalled`, score: 90 + Math.min(9, quiet / 10), title: `Follow up on ${d.name}`,
@@ -234,6 +235,8 @@ function workItems() {
   }
   const hidden = snoozed();
   for (const it of items) if (meId() && it.belongs === "mine") it.score += 25;
+  // What you pinned matters more: a pinned task, and every task and subtask of a pinned project, moves up.
+  for (const it of items) if (it.pinned) it.score += PIN_BOOST;
   return items.filter((it) => !hidden[it.key]).sort((a, b) => b.score - a.score || a.title.localeCompare(b.title));
 }
 function takeTask(t) {
@@ -362,20 +365,27 @@ function yourWork(rest, snoozedCount) {
   const whose = meId() ? scope || "mine" : "all";
   const mineOnly = whose === "mine";
   const today = todayISO();
-  // Pinned ones are in the Pinned section above, so they aren't repeated here.
-  const pool = allWork().filter((w) => (!mineOnly || isOn(w.rec, meId())) && !isPinned(w.kind, w.id));
+  // A pinned one is always listed, whoever it belongs to, and comes first.
+  const pin = (w) => isPinned(w.kind, w.id);
+  const pool = allWork().filter((w) => !mineOnly || isOn(w.rec, meId()) || pin(w));
   const live = pool.filter((w) => isLive(w.kind, w.rec));
   const finished = pool.filter((w) => w.kind === "project" && w.rec.status === "done");
   // What needs a person comes first: gone quiet, then no next step, then by the next due date.
   const rank = (w) => (w.kind === "project" && w.rec.status === "done" ? 5 : w.kind === "project" && w.rec.status === "paused" ? 4
     : w.kind === "deal" && stalledDays(w.rec) ? 0 : !w.next ? 1 : 2);
-  const list = [...live, ...(workDone ? finished : [])].sort((a, b) => rank(a) - rank(b) ||
+  const list = [...live, ...(workDone ? finished : [])].sort((a, b) => Number(pin(b)) - Number(pin(a)) || rank(a) - rank(b) ||
     String(a.next?.due || "9").localeCompare(String(b.next?.due || "9")) || a.name.localeCompare(b.name));
   const shown = workAll ? list : list.slice(0, WORK_LIMIT);
   const name = "projects";
   // Tasks no card covers: ones that belong to nothing, or to work that isn't in this list.
   const inList = new Set(list.map((w) => w.kind + ":" + w.id));
-  const loose = rest.filter((it) => it.type === "task" && !isPinned("task", it.taskId) && (mineOnly ? it.belongs === "mine" : true) && !(it.work && inList.has(it.work)));
+  // A pinned task is listed too, first, unless a card above already shows it as its next task.
+  const onCard = new Set(list.map((w) => w.next?.id));
+  const pinnedTask = (it) => isPinned("task", it.taskId);
+  const loose = rest.filter((it) => it.type === "task" && (pinnedTask(it)
+    ? !onCard.has(it.taskId)
+    : (mineOnly ? it.belongs === "mine" : true) && !(it.work && inList.has(it.work))))
+    .sort((a, b) => Number(pinnedTask(b)) - Number(pinnedTask(a)));
   const looseShown = showAll ? loose : loose.slice(0, TASK_LIMIT);
   const mineCount = allWork().filter((w) => isLive(w.kind, w.rec) && isOn(w.rec, meId())).length;
   const allCount = allWork().filter((w) => isLive(w.kind, w.rec)).length;
@@ -392,31 +402,6 @@ function yourWork(rest, snoozedCount) {
       h("div", { class: "wloose__title" }, `Other tasks · ${loose.length}`),
       taskRows(looseShown),
       moreBtn(loose.length - looseShown.length, showAll, () => { showAll = !showAll; refresh(); })));
-}
-
-// ---------- pinned: what this person chose to keep at the top ----------
-// The same pins as on Deals & Tasks. Deals and projects show as their cards,
-// tasks as rows; a finished task drops off on its own.
-function pinnedSection() {
-  const today = todayISO();
-  const pins = new Set([...pinned("deal").map((d) => "deal:" + d.id), ...pinned("project").map((p) => "project:" + p.id)]);
-  const work = allWork().filter((w) => pins.has(w.kind + ":" + w.id));
-  // A pinned task already showing as the next step on a pinned card isn't listed twice.
-  const onCard = new Set(work.map((w) => w.next?.id));
-  const tasks = pinned("task").filter((t) => t.status !== "done" && !onCard.has(t.id));
-  if (!work.length && !tasks.length) return null;
-  return section(`Pinned · ${work.length + tasks.length}`, null,
-    work.length > 0 && h("ul", { class: "wcards" }, work.map((w) => workCard(w, today))),
-    tasks.length > 0 && h("ul", { class: work.length ? "wloose" : null }, tasks.map((t) => {
-      const w = workOf(t);
-      const late = t.due && t.due < today;
-      const it = { title: t.title, tag: workTag(t), open: w ? () => toWork(w.kind, w.id) : () => editRecord("tasks", t),
-        meta: [t.owner_id !== meId() && personName(t.owner_id), late ? red(`Overdue since ${fmtDate(t.due)}`) : t.due && `Due ${fmtDate(t.due)}`, t.status === "doing" && "In progress"] };
-      return h("li", { class: "arow trow" },
-        h("button", { class: "check", type: "button", role: "checkbox", "aria-checked": "false", "aria-label": "Done: " + t.title, onclick: () => finishTask(t) }),
-        cell(it, "arow__title"),
-        pinButton("task", t.id, t.title));
-    })));
 }
 
 // ---------- from Slack: updates waiting for a yes or no ----------
@@ -671,7 +656,7 @@ export function render() {
     h("div", { class: "home__head page-head__text" }, h("h1", { class: "h1" }, greeting()), pulse(), yourUpdate()),
     h("div", { class: "home__main" },
       claim(),
-      today(top), pinnedSection(), fromSlack(), yourWork(rest, hiddenCount), reconnect(rest), upForGrabs(rest), changes(), goals(),
+      today(top), fromSlack(), yourWork(rest, hiddenCount), reconnect(rest), upForGrabs(rest), changes(), goals(),
       comingUp(new Set(top.filter((it) => it.type === "date").map((it) => it.id))), tidy(),
       h("button", { class: "missionline", type: "button", onclick: openAbout, title: "Mission, values and what we sell" }, (mission || "Write the mission") + " →")),
     news);
