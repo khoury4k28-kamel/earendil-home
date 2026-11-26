@@ -234,12 +234,21 @@ function adder(label, options, onPick) {
   sel.addEventListener("change", () => sel.value && onPick(sel.value));
   return sel;
 }
+// The same picker as a small dashed "+" that sits after the last chip. The
+// list itself is the browser's own, laid invisibly over the plus.
+function plusAdder(label, options, onPick) {
+  if (!options.length) return null;
+  const sel = h("select", { "aria-label": label, title: label },
+    h("option", { value: "" }, label), options.map(([value, text]) => h("option", { value }, text)));
+  sel.addEventListener("change", () => sel.value && onPick(sel.value));
+  return h("span", { class: "plus-add" }, h("span", { "aria-hidden": "true" }, "+"), sel);
+}
 function teamBlock(table, r) {
   const ids = [...new Set([r.owner_id, ...(r.people_ids || [])])].filter((id) => byId("people", id));
   const others = sortByName(state.people.filter((p) => !ids.includes(p.id))).map((p) => [p.id, p.name]);
   return gathered("Team", ids.length,
     h("div", { class: "chips" }, ids.map((id) => personChip(id)),
-      adder("Add a team member", others, (id) => update(table, r.id, { people_ids: [...(r.people_ids || []), id] }))));
+      plusAdder("Add a team member", others, (id) => update(table, r.id, { people_ids: [...(r.people_ids || []), id] }))));
 }
 function contactsBlock(d) {
   const list = (d.contact_ids || []).map((id) => byId("contacts", id)).filter(Boolean);
@@ -286,11 +295,12 @@ function projectsBlock(d) {
 function notesBlock(type, id) {
   const notes = notesFor(type, id);
   return gathered("Notes", notes.length || null,
-    quickAdd(`wk-note-${type}-${id}`, "Add a note", (body) => addNote(type, id, body)),
-    notes.slice(0, 5).map((n) => h("div", { class: "note" },
+    // Oldest first, so the newest note is last and the box to add one sits right under it.
+    notes.length > 5 && h("div", { class: "small muted" }, `${notes.length - 5} earlier in the details panel`),
+    h("div", { class: "notes-up" }, notes.slice(0, 5).reverse().map((n) => h("div", { class: "note" },
       h("div", { class: "prose" }, n.body),
-      noteMeta(n))),
-    notes.length > 5 && h("div", { class: "small muted" }, `${notes.length - 5} earlier in the details panel`));
+      noteMeta(n)))),
+    quickAdd(`wk-note-${type}-${id}`, "Add a note", (body) => addNote(type, id, body)));
 }
 function aboutBlock(w) {
   const r = w.rec;

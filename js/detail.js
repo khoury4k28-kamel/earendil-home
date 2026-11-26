@@ -176,10 +176,11 @@ export function noteMeta(n) {
 function notesBlock(type, id) {
   const notes = notesFor(type, id);
   return block("Notes",
-    quickAdd(`note-${type}-${id}`, "Add a note", (body) => addNote(type, id, body)),
-    notes.length > 0 && h("div", null, notes.map((n) => h("div", { class: "note" },
+    // Oldest first, so the newest note is last and the box to add one sits right under it.
+    notes.length > 0 && h("div", { class: "notes-up" }, [...notes].reverse().map((n) => h("div", { class: "note" },
       h("div", { class: "prose" }, n.body),
-      noteMeta(n)))));
+      noteMeta(n)))),
+    quickAdd(`note-${type}-${id}`, "Add a note", (body) => addNote(type, id, body)));
 }
 
 function tasksBlock(tasks, idKey, defaults, opts) {
