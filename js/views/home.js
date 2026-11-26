@@ -36,9 +36,9 @@ let scope = null;        // "mine" | "all"; null = decide from who is signed in
 let openTidy = null;     // which "Tidy up" row is open
 let tidyAll = false;
 let grabsAll = false;
-let workAll = false;
+let workCount = 0;       // how many project cards are showing (0 = the first few)
 let workDone = false;    // also list finished projects
-const WORK_LIMIT = 6;
+const WORK_LIMIT = 3;    // the top three, then three more at a time, or all
 let radarAll = false;
 let slackAll = false;
 const RADAR_LIMIT = 6;
@@ -375,7 +375,10 @@ function yourWork(rest, snoozedCount) {
     : w.kind === "deal" && stalledDays(w.rec) ? 0 : !w.next ? 1 : 2);
   const list = [...live, ...(workDone ? finished : [])].sort((a, b) => Number(pin(b)) - Number(pin(a)) || rank(a) - rank(b) ||
     String(a.next?.due || "9").localeCompare(String(b.next?.due || "9")) || a.name.localeCompare(b.name));
-  const shown = workAll ? list : list.slice(0, WORK_LIMIT);
+  const count = Math.min(list.length, Math.max(workCount, WORK_LIMIT));
+  const shown = list.slice(0, count);
+  const hidden = list.length - count;
+  const showTo = (n) => () => { workCount = n; refresh(); };
   const name = "projects";
   // Tasks no card covers: ones that belong to nothing, or to work that isn't in this list.
   const inList = new Set(list.map((w) => w.kind + ":" + w.id));
@@ -397,7 +400,10 @@ function yourWork(rest, snoozedCount) {
       h("a", { class: "link small", href: "#work" }, "All"),
       meId() && seg("Whose work", [["mine", `Mine ${mineCount}`], ["all", `Everyone ${allCount}`]], whose, (v) => { scope = v; })),
     shown.length > 0 && h("ul", { class: "wcards" }, shown.map((w) => workCard(w, today))),
-    moreBtn(list.length - shown.length, workAll, () => { workAll = !workAll; refresh(); }),
+    (hidden > 0 || count > WORK_LIMIT) && h("div", { class: "morerow" },
+      hidden > 0 && h("button", { class: "more", type: "button", onclick: showTo(count + WORK_LIMIT) }, `+ ${Math.min(hidden, WORK_LIMIT)} more`),
+      hidden > WORK_LIMIT && h("button", { class: "more", type: "button", onclick: showTo(list.length) }, `Show all ${list.length}`),
+      count > WORK_LIMIT && h("button", { class: "more", type: "button", onclick: showTo(0) }, "Show top 3")),
     loose.length > 0 && h("div", { class: "wloose" },
       h("div", { class: "wloose__title" }, `Other tasks · ${loose.length}`),
       taskRows(looseShown),
