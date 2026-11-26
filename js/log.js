@@ -224,26 +224,53 @@ function skip(log) {
 }
 
 // ---------- screens ----------
-function composer(device) {
+function sendIcon() {
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  for (const [k, v] of Object.entries({ viewBox: "0 0 24 24", width: "18", height: "18", fill: "none", stroke: "currentColor", "stroke-width": "2.2", "stroke-linecap": "round", "stroke-linejoin": "round", "aria-hidden": "true" })) svg.setAttribute(k, v);
+  const path = document.createElementNS(ns, "path");
+  path.setAttribute("d", "M12 19V5M6 11l6-6 6 6");
+  svg.append(path);
+  return svg;
+}
+// The box grows with what is written in it, up to a point, then scrolls.
+function fit(text) {
+  if (!text.isConnected) return;
+  text.style.height = "auto";
+  text.style.height = Math.min(text.scrollHeight, Math.round(window.innerHeight * 0.42)) + "px";
+}
+// One rounded box, as in a chat: the words, then the mic and Send inside it.
+// In the hub Return sends and Shift+Return starts a new line; on the phone
+// Return is a new line, as its keyboard expects.
+function composer(device, hint) {
   loadDraft();
   const text = h("textarea", {
-    class: "textarea logbox__text", id: "log-text", placeholder: "What did you do today? Say it however it comes.",
+    class: "logbox__text", id: "log-text", rows: "1", placeholder: hint || "What did you do today? Say it however it comes.",
     "aria-label": "Log entry", maxlength: String(MAX * 2),
   });
   text.value = draft;
-  text.addEventListener("input", () => setDraft(text.value));
-  text.addEventListener("keydown", (e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); save(device); } });
+  const send = h("button", { class: "sendbtn", type: "button", "aria-label": "Send", title: "Send", onclick: () => save(device) }, sendIcon());
+  const mark = () => send.classList.toggle("is-ready", Boolean(text.value.trim()));
+  mark();
+  text.addEventListener("input", () => { setDraft(text.value); fit(text); mark(); });
+  text.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" || e.isComposing) return;
+    const go = device === "phone" ? e.metaKey || e.ctrlKey : !e.shiftKey;
+    if (go) { e.preventDefault(); save(device); }
+  });
+  requestAnimationFrame(() => fit(text));
   const on = Boolean(stopListening);
-  return h("div", { class: "logbox" },
-    text,
-    h("div", { class: "logbox__interim", id: "log-interim", "aria-live": "polite" }, interim),
-    micProblem && h("div", { class: "form-error" }, micProblem),
-    h("div", { class: "logbox__bar" },
-      canDictate()
-        ? h("button", { class: "micbtn" + (on ? " is-on" : ""), type: "button", "aria-pressed": String(on), onclick: toggleMic }, micIcon(), on ? "Stop" : "Speak")
-        : h("span", { class: "muted small" }, "To speak, use the mic on your keyboard."),
-      h("span", { class: "logbox__note muted small" }, "Only you can read this. Teammates see the ideas you approve."),
-      h("button", { class: "btn btn--primary", type: "button", onclick: () => save(device) }, "Save")));
+  return h("div", { class: "logcomposer" },
+    h("div", { class: "logbox" },
+      text,
+      h("div", { class: "logbox__interim", id: "log-interim", "aria-live": "polite" }, interim),
+      micProblem && h("div", { class: "form-error" }, micProblem),
+      h("div", { class: "logbox__bar" },
+        canDictate()
+          ? h("button", { class: "micbtn" + (on ? " is-on" : ""), type: "button", "aria-pressed": String(on), onclick: toggleMic }, micIcon(), on ? "Stop" : "Speak")
+          : h("span", { class: "muted small" }, "To speak, use the mic on your keyboard."),
+        send)),
+    h("div", { class: "logbox__note muted small" }, "Only you can read this. Teammates see the ideas you approve."));
 }
 
 function tick(id, on, label, toggle) {
@@ -295,20 +322,24 @@ function pending(log) {
 }
 
 let armed = null;
-function entry(log) {
-  const lines = Array.isArray(log.applied) ? log.applied : [];
+// The first press asks, the second deletes.
+function delButton(log) {
   const del = () => {
     if (armed !== log.id) { armed = log.id; changed(); return; }
     armed = null;
     picks.delete(log.id);
     remove("logs", log.id);
   };
+  return h("button", { class: "quiet logentry__del", type: "button", onclick: del }, armed === log.id ? "Click again to delete" : "Delete");
+}
+function entry(log) {
+  const lines = Array.isArray(log.applied) ? log.applied : [];
   return h("li", { class: "logentry" },
     h("div", { class: "logentry__meta" },
       h("span", { class: "num" }, clock(log.created_at)),
       log.source === "voice" && h("span", null, "Spoken"),
       log.device === "phone" && h("span", null, "Phone"),
-      h("button", { class: "quiet logentry__del", type: "button", onclick: del }, armed === log.id ? "Click again to delete" : "Delete")),
+      delButton(log)),
     h("div", { class: "prose" }, log.body),
     lines.length > 0 && h("ul", { class: "logentry__did" }, lines.map((l) => h("li", null, l))));
 }
@@ -337,6 +368,61 @@ export function logPanel({ device = "hub", history: limit = null } = {}) {
     ...(device === "phone" ? [cards, composer(device)] : [composer(device), cards]),
     limit === 0 ? null : history(logs.filter((l) => l.status === "applied"), limit),
   ].flat().filter(Boolean);
+}
+
+// ---------- the Log tab: a conversation ----------
+// Laid out like a chat, in a column down the middle of the page. What you
+// wrote sits on the right; what the hub made of it answers on the left: still
+// reading, a check card, or the updates that went in. The box stays at the
+// foot. A day with nothing in it yet opens on the box alone, mid-screen.
+let showEarlier = false;
+let lastThread = null;
+window.addEventListener("hashchange", () => { showEarlier = false; lastThread = null; });
+
+function answer(log) {
+  if (log.status !== "applied") return log.status === "read" && log.proposal && !busy.has(log.id) ? review(log) : pending(log);
+  const lines = Array.isArray(log.applied) ? log.applied : [];
+  return lines.length
+    ? h("ul", { class: "logentry__did" }, lines.map((l) => h("li", null, l)))
+    : h("div", { class: "muted" }, "Kept. Nothing else changed.");
+}
+function turn(log) {
+  return [
+    h("div", { class: "msg msg--me" },
+      h("div", { class: "msg__bubble prose" }, log.body),
+      h("div", { class: "msg__meta" },
+        h("span", { class: "num" }, clock(log.created_at)),
+        log.source === "voice" && h("span", null, "Spoken"),
+        log.device === "phone" && h("span", null, "Phone"),
+        delButton(log))),
+    h("div", { class: "msg msg--hub" }, answer(log)),
+  ];
+}
+export function logChat() {
+  if (!state.me.id) return h("div", { class: "chat chat--hero" }, h("div", { class: "chat__hero" }, logPanel({ device: "hub" })));
+  const logs = mine().reverse();   // oldest first, as a conversation reads
+  const today = todayISO();
+  const open = logs.some((l) => l.status !== "applied" || localDay(l.created_at) === today);
+  if (!open && !showEarlier) {
+    const first = String(state.me.name || "").trim().split(/\s+/)[0];
+    return h("div", { class: "chat chat--hero" },
+      h("div", { class: "chat__hero" },
+        h("h1", { class: "chat__hello" }, first ? `What did you do today, ${first}?` : "What did you do today?"),
+        composer("hub", "Say it however it comes."),
+        logs.length > 0 && h("button", { class: "quiet chat__earlier", type: "button", onclick: () => { showEarlier = true; changed(); } }, "Earlier entries")));
+  }
+  const days = new Map();
+  for (const l of logs) { const d = localDay(l.created_at); days.set(d, [...(days.get(d) || []), l]); }
+  // Stay at the latest turn: on arriving, and whenever the conversation moves on.
+  const key = logs.map((l) => l.id + l.status + (busy.has(l.id) ? "~" : "")).join("|");
+  if (key !== lastThread) {
+    lastThread = key;
+    requestAnimationFrame(() => window.scrollTo(0, document.documentElement.scrollHeight));
+  }
+  return h("div", { class: "chat" },
+    h("div", { class: "chat__thread" },
+      [...days].map(([day, list]) => [h("div", { class: "chat__day" }, dayLabel(day)), list.map(turn)])),
+    h("div", { class: "chat__dock" }, composer("hub", "What else happened?")));
 }
 
 // ---------- the hub's ways in ----------
