@@ -5,7 +5,7 @@
 import { h, avatar, kv, panel, refresh, inlineEdit, quickAdd } from "../ui.js";
 import { personPlace } from "../places.js";
 import { showTeamOnMap } from "./map.js";
-import { state, sortByName, byId, update, create, teamName, dealsForPerson, tasksForPerson } from "../store.js";
+import { state, sortByName, byId, update, create, teamName, dealsForPerson, projectsForPerson, tasksForPerson } from "../store.js";
 import { editRecord, addBtn, personChip, openPerson, taskList, pickPerson } from "../detail.js";
 import { goalsList, milestoneRows } from "./home.js";
 
@@ -42,11 +42,11 @@ function reportingLines() {
 
 // Everyone, one row each, always with the same four columns after the name:
 // working on, where they are, open tasks, deals. An empty one shows a dash.
-const PEOPLE_COLS = ["Working on", "Location", "Open tasks", "Deals"];
+const PEOPLE_COLS = ["Working on", "Location", "Open tasks", "Projects"];
 function personRow(p) {
   const place = personPlace(p);
   const open = tasksForPerson(p.id).filter((t) => t.status !== "done").length;
-  const deals = dealsForPerson(p.id).length;
+  const deals = dealsForPerson(p.id).length + projectsForPerson(p.id).length;
   const cell = (label, value, cls) => h("span", { class: "prow__cell" + (cls ? " " + cls : "") + (value ? "" : " prow__cell--none"), "data-label": label }, value || "–");
   return h("li", null, h("button", { class: "prow", type: "button", onclick: () => openPerson(p.id) },
     avatar(p.name),

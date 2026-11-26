@@ -50,12 +50,12 @@ export function summary() {
   const total = state.deals.length || 1;
   return h("div", { class: "block" },
     h("div", { class: "stats" },
-      stat("in pipeline", sized.length ? fmtRange(lo, hi) : fmtMoney(0), `Estimates on ${sized.length} of ${plural(open.length, "open deal")}`),
+      stat("in pipeline", sized.length ? fmtRange(lo, hi) : fmtMoney(0), `Estimates on ${sized.length} of ${plural(open.length, "open project")}`),
       stat("open", open.length, "Lead to negotiating"),
       stat("stalled", stalled, "No contact in 30 days" + (noDate ? `. ${noDate} more have no contact date logged` : ""), stalled > 0),
-      stat("no size yet", open.length - sized.length, "Open deals without an estimate"),
+      stat("no size yet", open.length - sized.length, "Open projects without an estimate"),
       stat("signed or closed", done)),
-    h("div", { class: "stagebar-all", role: "img", "aria-label": "Deals by stage" },
+    h("div", { class: "stagebar-all", role: "img", "aria-label": "Projects by stage" },
       STAGES.map((s) => h("span", { class: "c-" + s.value, title: s.label, style: `width:${(state.deals.filter((d) => (d.stage || "lead") === s.value).length / total) * 100}%` }))));
 }
 
@@ -93,7 +93,7 @@ function board(deals) {
     const col = h("section", { class: "col col--" + s.value },
       h("div", { class: "col__head" },
         h("h2", { class: "col__title" }, h("span", { class: "dot c-" + s.value }), s.label, h("span", { class: "n" }, inStage.length)),
-        h("button", { class: "col__add", type: "button", "aria-label": `Add a deal in ${s.label}`, title: "Add a deal here",
+        h("button", { class: "col__add", type: "button", "aria-label": `Add a project in ${s.label}`, title: "Add a project here",
           onclick: () => editRecord("deals", null, { ...NEW_DEAL, stage: s.value }) }, "+"),
         hi > 0 && h("span", { class: "col__sum num" }, fmtRange(lo, hi))),
       h("div", { class: "col__body" }, inStage.map(dealCard)));
@@ -114,7 +114,7 @@ function table(deals) {
   const order = Object.fromEntries(STAGES.map((s, i) => [s.value, i]));
   const sorted = [...deals].sort((a, b) => order[a.stage] - order[b.stage] || a.name.localeCompare(b.name));
   return h("div", { class: "table-wrap" }, h("table", null,
-    h("thead", null, h("tr", null, ["Deal", "With", "Stage", "Size", "Owner", "Last contact", "Next step"].map((c) => h("th", null, c)))),
+    h("thead", null, h("tr", null, ["Project", "With", "Stage", "Size", "Owner", "Last contact", "Next step"].map((c) => h("th", null, c)))),
     h("tbody", null, sorted.map((d) => {
       const stalled = stalledDays(d);
       const save = (key) => (v) => update("deals", d.id, { [key]: v });
@@ -135,15 +135,15 @@ export function render() {
   const deals = visible();
   return h("main", { class: "page" },
     h("div", { class: "page-head" },
-      h("h1", { class: "h1" }, "Deal Tracker"),
+      h("h1", { class: "h1" }, "Project Tracker"),
       h("div", { class: "actions" },
         h("div", { class: "seg", role: "group", "aria-label": "View" },
           h("button", { type: "button", "aria-pressed": String(mode === "board"), onclick: () => setMode("board") }, "Board"),
           h("button", { type: "button", "aria-pressed": String(mode === "table"), onclick: () => setMode("table") }, "Table")),
-        h("button", { class: "btn btn--primary", type: "button", onclick: () => editRecord("deals", null, { ...NEW_DEAL, stage: "lead" }) }, "Add deal"))),
+        h("button", { class: "btn btn--primary", type: "button", onclick: () => editRecord("deals", null, { ...NEW_DEAL, stage: "lead" }) }, "Add project"))),
     summary(),
     state.deals.length > 0 && filters(),
     state.deals.length === 0
-      ? h("div", { class: "empty" }, h("div", null, h("b", null, "No deals yet.")))
+      ? h("div", { class: "empty" }, h("div", null, h("b", null, "No projects on the tracker yet.")))
       : mode === "table" ? (deals.length ? table(deals) : h("div", { class: "muted" }, "Nothing here.")) : board(deals));
 }

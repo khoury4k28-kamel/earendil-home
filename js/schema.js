@@ -31,7 +31,7 @@ export const projectStatusLabel = (v) => PROJECT_STATUS.find((s) => s.value === 
 export const TASK_STATUS = [{ value: "todo", label: "To do" }, { value: "doing", label: "In progress" }, { value: "done", label: "Done" }];
 export const SOURCES = ["Slack", "Email", "Granola"];
 
-export const NOUN = { people: "person", teams: "team", goals: "target", milestones: "milestone", tasks: "task", projects: "project", deals: "deal", contacts: "contact" };
+export const NOUN = { people: "person", teams: "team", goals: "target", milestones: "milestone", tasks: "task", projects: "project", deals: "project", contacts: "contact" };
 
 const people = () => sortByName(state.people).map((p) => ({ value: p.id, label: p.name }));
 // People under the team they are in, for pickers that open team by team.
@@ -72,7 +72,7 @@ export function fieldsFor(table, record = {}) {
       { key: "due", label: "Due", type: "date" },
       { key: "current", label: "Where it stands", type: "number" },
       { key: "target", label: "Target number", type: "number" },
-      { key: "unit", label: "Unit", placeholder: "deals, $, units…" },
+      { key: "unit", label: "Unit", placeholder: "projects, $, units…" },
       { key: "note", label: "Note" },
     ];
     case "milestones": return [
@@ -88,10 +88,9 @@ export function fieldsFor(table, record = {}) {
       { key: "owner_id", label: "Owner", type: "select", options: people(), blank: "Nobody yet" },
       { key: "status", label: "Status", type: "select", required: true, options: TASK_STATUS },
       { key: "due", label: "Due", type: "date" },
-      { key: "belongs", label: "Belongs to", type: "select", blank: "No deal or project", groups: [
-        { label: "Deals", options: deals().map((o) => ({ value: "deal:" + o.value, label: o.label })) },
-        { label: "Projects", options: projects().map((o) => ({ value: "project:" + o.value, label: o.label })) },
-      ] },
+      { key: "belongs", label: "Belongs to", type: "select", blank: "No project",
+        options: [...deals().map((o) => ({ value: "deal:" + o.value, label: o.label })), ...projects().map((o) => ({ value: "project:" + o.value, label: o.label }))]
+          .sort((a, b) => a.label.localeCompare(b.label)) },
       { key: "team_id", label: "Team", type: "select", options: teams(), blank: "No team" },
       { key: "company_wide", type: "checkbox", label: "Company-wide", checkLabel: "Show on Home as a company-wide to-do" },
     ];
@@ -100,12 +99,12 @@ export function fieldsFor(table, record = {}) {
       { key: "owner_id", label: "Owner", type: "select", options: people(), blank: "Nobody yet" },
       { key: "status", label: "Status", type: "select", required: true, options: PROJECT_STATUS },
       { key: "due", label: "Due", type: "date" },
-      { key: "deal_id", label: "Under a deal", type: "select", options: deals(), blank: "No deal" },
+      { key: "deal_id", label: "Part of", type: "select", options: deals(), blank: "No larger project" },
       { key: "people_ids", label: "Who's on it", type: "multi", options: people(), groups: peopleByTeam(), none: "Add people on the Teams tab first." },
       { key: "summary", label: "What it's for", type: "textarea" },
     ];
     case "deals": return [
-      { key: "name", label: "Deal name", required: true },
+      { key: "name", label: "Project name", required: true },
       { key: "organisation", label: "With" },
       { key: "kind", label: "Type", type: "select", required: true, options: DEAL_KINDS },
       { key: "region", label: "Region" },

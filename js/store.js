@@ -266,6 +266,33 @@ export function togglePin(id) {
   emit();
 }
 
+// ---------- pinned deals, projects and tasks: each person's own ----------
+// One list of "kind:id" keys, so a pin made on any screen shows on every
+// other. Signed in, it is kept on the person's profile once the people table
+// has the `pins` column; until then, and in preview, it is kept in this browser.
+const PIN_TABLE = { deal: "deals", project: "projects", task: "tasks" };
+const workPinKey = () => "work-pins:" + (state.me.id || "shared");
+const pinsOnRow = () => pinsOnProfile() && "pins" in (byId("people", state.me.id) || {});
+function pinKeys() {
+  let keys = null;
+  if (pinsOnRow()) keys = byId("people", state.me.id).pins;
+  else { try { keys = JSON.parse(localStorage.getItem(workPinKey()) || "null"); } catch { keys = null; } }
+  return Array.isArray(keys) ? keys : [];
+}
+export const isPinned = (kind, id) => pinKeys().includes(kind + ":" + id);
+// This person's pinned records of one kind, in the order they pinned them.
+export const pinned = (kind) => pinKeys().filter((k) => k.startsWith(kind + ":")).map((k) => byId(PIN_TABLE[kind], k.slice(kind.length + 1))).filter(Boolean);
+export function togglePinned(kind, id) {
+  const key = kind + ":" + id;
+  const now = pinKeys();
+  // Keys whose record is gone are dropped on the way.
+  const alive = (k) => { const i = k.indexOf(":"); return Boolean(byId(PIN_TABLE[k.slice(0, i)] || "", k.slice(i + 1))); };
+  const next = (now.includes(key) ? now.filter((k) => k !== key) : [...now, key]).filter(alive);
+  if (pinsOnRow()) return update("people", state.me.id, { pins: next });
+  try { localStorage.setItem(workPinKey(), JSON.stringify(next)); } catch { /* storage may be blocked */ }
+  emit();
+}
+
 // ---------- lookups ----------
 export const byId = (table, id) => (id ? state[table].find((r) => r.id === id) : null) || null;
 export const personName = (id) => byId("people", id)?.name || "";

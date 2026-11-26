@@ -105,7 +105,7 @@ function standIn(text) {
   return made;
 }
 export function simulateSlack() {
-  const box = h("textarea", { class: "textarea", id: "slack-sim", rows: "4", placeholder: "Type a message as it might be posted in a channel. Name a deal or a task." });
+  const box = h("textarea", { class: "textarea", id: "slack-sim", rows: "4", placeholder: "Type a message as it might be posted in a channel. Name a project or a task." });
   const close = openDialog({
     title: "Try a Slack message",
     body: h("div", { class: "block" }, box,
@@ -115,7 +115,7 @@ export function simulateSlack() {
       if (!text) { box.focus(); return; }
       const made = standIn(text);
       close();
-      toast(made ? "Read. See the deal's notes and “From Slack” on Home." : "Nothing in that message matched a deal or a task.");
+      toast(made ? "Read. See the project's notes and “From Slack” on Home." : "Nothing in that message matched a project or a task.");
     } }, "Post")],
   });
   box.focus();

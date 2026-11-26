@@ -2,7 +2,7 @@
 // screens share: task lists, notes, and the add/edit form for any record.
 
 import {
-  h, avatar, kv, block, drawerFrame, openDrawer, closeDrawer, toast, inlineEdit, quickAdd,
+  h, avatar, kv, block, drawerFrame, openDrawer, openDialog, closeDrawer, toast, inlineEdit, quickAdd,
   fmtDate, fmtDateTime, fmtRange, daysSince, todayISO, ago,
 } from "./ui.js";
 import { zonePlace, timeIn, countryList } from "./places.js";
@@ -43,6 +43,18 @@ export function editRecord(table, record, defaults = {}, added) {
     },
     onDelete: record ? async () => { await remove(table, record.id); if (["people", "deals", "contacts", "projects"].includes(table)) closeDrawer(); } : null,
   });
+}
+// One "Add project" for both kinds. With an outside party it has a stage and
+// sits on the Project Tracker; our own work has a status and a due date.
+// `added(kind, row)` runs once it is saved.
+export function addProject(added, { owner = state.me.id || null, stage = "lead" } = {}) {
+  let close = () => {};
+  const pick = (title, text, run) => h("button", { class: "choice", type: "button", onclick: () => { close(); run(); } }, h("b", null, title), h("span", { class: "muted" }, text));
+  close = openDialog({ title: "Add project", body: h("div", { class: "choices" },
+    pick("With a client or partner", "A sale, a partnership or an investment. It has a stage and shows on the Project Tracker.",
+      () => editRecord("deals", null, { stage, kind: "customer", owner_id: owner, people_ids: [], contact_ids: [] }, added && ((row) => added("deal", row)))),
+    pick("Our own work", "An internal project, such as an engineering build. It has a status and a due date.",
+      () => editRecord("projects", null, { status: "active", owner_id: owner, people_ids: [] }, added && ((row) => added("project", row))))) });
 }
 const editBtn = (table, record) => h("button", { class: "btn btn--small", type: "button", onclick: () => editRecord(table, record) }, "Edit");
 export const addBtn = (label, table, defaults) =>
@@ -202,13 +214,13 @@ export function progressBar(done, total) {
 }
 // The small mark that tells a deal (its stage colour) from a project.
 export const workMark = (w) => (w.kind === "deal"
-  ? h("span", { class: "dot c-" + (w.rec.stage || "lead"), title: "Deal · " + stageLabel(w.rec.stage) })
+  ? h("span", { class: "dot c-" + (w.rec.stage || "lead"), title: "Project · " + stageLabel(w.rec.stage) })
   : h("span", { class: "pmark", title: "Project · " + projectStatusLabel(w.rec.status) }));
 // The label a task carries wherever it shows: its deal or project, one click away.
 export function workTag(task) {
   const w = workOf(task);
   if (!w) return null;
-  return h("button", { class: "wtag", type: "button", title: (w.kind === "deal" ? "Deal: " : "Project: ") + w.name,
+  return h("button", { class: "wtag", type: "button", title: "Project: " + w.name,
     onclick: (e) => { e.stopPropagation(); location.hash = `#work/${w.kind}:${w.id}`; } }, workMark(w), h("span", null, w.name));
 }
 export function workRows(list) {
@@ -238,11 +250,11 @@ export function openProject(id) {
     const team = (p.people_ids || []).filter((x) => x !== p.owner_id && byId("people", x));
     const save = (key) => (v) => update("projects", id, { [key]: v });
     // Two clicks, because it can't be taken back with Undo.
-    const sell = h("button", { class: "more", type: "button" }, "Turn into a deal");
+    const sell = h("button", { class: "more", type: "button" }, "Put on the Project Tracker");
     sell.addEventListener("click", async () => {
-      if (!sell.dataset.armed) { sell.dataset.armed = "1"; sell.textContent = "Click again: its tasks and notes move to a new deal"; return; }
+      if (!sell.dataset.armed) { sell.dataset.armed = "1"; sell.textContent = "Click again: it gets a stage, and its tasks and notes stay with it"; return; }
       const made = await toDeal(p);
-      if (made) { openDeal(made.id); toast(`${made.name} is now a deal.`); }
+      if (made) { openDeal(made.id); toast(`${made.name} is on the Project Tracker.`); }
     });
     return drawerFrame(
       { eyebrow: "Project", title: p.name, sub: doneLine(pr), actions: editBtn("projects", p) },
@@ -256,7 +268,7 @@ export function openProject(id) {
         ["Owner", pickPerson({ id: `powner-${id}`, value: p.owner_id, label: "Owner", onChange: save("owner_id") })],
         ["Due", inlineEdit({ id: `pdue-${id}`, value: p.due, display: fmtDate(p.due), placeholder: "Add date", label: "Due", type: "date", onSave: save("due") })],
         ["Team", team.length > 0 && h("div", { class: "chips" }, team.map(personChip))],
-        ["Deal", deal && h("button", { class: "wtag", type: "button", onclick: () => openDeal(deal.id) }, workMark({ kind: "deal", rec: deal }), h("span", null, deal.name))],
+        ["Part of", deal && h("button", { class: "wtag", type: "button", onclick: () => openDeal(deal.id) }, workMark({ kind: "deal", rec: deal }), h("span", null, deal.name))],
       ]),
       notesBlock("project", id),
       !deal && sell,
@@ -288,7 +300,7 @@ export function openPerson(id) {
           ["Note", p.note],
         ])),
       tasksBlock(tasksForPerson(id), `task-person-${id}`, { owner_id: id }, { showOwner: false }),
-      work.length > 0 && block(`${work.every((w) => w.kind === "deal") ? "Deals" : work.every((w) => w.kind === "project") ? "Projects" : "Deals and projects"} · ${work.length}`, workRows(work)),
+      work.length > 0 && block(`Projects · ${work.length}`, workRows(work)),
       notesBlock("person", id));
   });
 }
@@ -305,7 +317,7 @@ export function openDeal(id) {
     const pr = progress("deal", id);
     const under = projectsForDeal(id).map((p) => ({ kind: "project", id: p.id, rec: p, name: p.name, ...progress("project", p.id) }));
     return drawerFrame(
-      { eyebrow: [d.kind && d.kind[0].toUpperCase() + d.kind.slice(1), d.region].filter(Boolean).join(" · ") || "Deal", title: d.name,
+      { eyebrow: [d.kind && d.kind[0].toUpperCase() + d.kind.slice(1), d.region].filter(Boolean).join(" · ") || "Project", title: d.name,
         sub: [d.organisation, doneLine(pr)].filter(Boolean).join(" · "), actions: editBtn("deals", d) },
       progressBar(pr.done, pr.total),
       h("div", { class: "stage-pick", role: "group", "aria-label": "Stage" }, STAGES.map((s) => h("button", {
@@ -327,10 +339,10 @@ export function openDeal(id) {
         ["Outside", outside.length > 0 && h("div", { class: "chips" }, outside.map((c) =>
           h("button", { class: "person-chip", type: "button", onclick: () => openContact(c.id) }, avatar(c.name, "s"), c.name)))],
       ]),
-      inlineEdit({ id: `sum-${id}`, value: d.summary, placeholder: "Add what this deal is about", label: "Summary", multiline: true, onSave: save("summary") }),
-      under.length > 0 && block(`Projects under this deal · ${under.length}`, workRows(under)),
+      inlineEdit({ id: `sum-${id}`, value: d.summary, placeholder: "Add what this project is about", label: "Summary", multiline: true, onSave: save("summary") }),
+      under.length > 0 && block(`Projects under this one · ${under.length}`, workRows(under)),
       h("button", { class: "more", type: "button", onclick: () => editRecord("projects", null,
-        { status: "active", deal_id: id, owner_id: state.me.id || d.owner_id || null, people_ids: [] }, (row) => openProject(row.id)) }, "+ Add a project under this deal"),
+        { status: "active", deal_id: id, owner_id: state.me.id || d.owner_id || null, people_ids: [] }, (row) => openProject(row.id)) }, "+ Add a project under this one"),
       notesBlock("deal", id),
       d.source && h("div", { class: "small muted" }, "Source: " + d.source));
   });
@@ -353,7 +365,7 @@ export function openContact(id) {
         ["Last contact", contactDate("contacts", c)],
       ]),
       c.notes && h("div", { class: "prose sub" }, c.notes),
-      deals.length > 0 && block(`Deals · ${deals.length}`, dealRows(deals)),
+      deals.length > 0 && block(`Projects · ${deals.length}`, dealRows(deals)),
       notesBlock("contact", id),
       c.source && h("div", { class: "small muted" }, "Source: " + c.source));
   });

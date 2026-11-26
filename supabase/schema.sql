@@ -82,6 +82,8 @@ alter table public.people add column if not exists tz text;
 alter table public.people add column if not exists seen_at timestamptz;
 -- The documents this person has pinned (ids from the Documents tab). Theirs alone.
 alter table public.people add column if not exists pinned_docs text[];
+-- The deals, projects and tasks this person has pinned, as "kind:id" keys. Theirs alone.
+alter table public.people add column if not exists pins text[];
 
 create table if not exists public.teams (
   id text primary key default gen_random_uuid()::text,

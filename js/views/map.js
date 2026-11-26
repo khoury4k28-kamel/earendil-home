@@ -151,7 +151,7 @@ function shapeBox(i) {
   return boxes.get(i);
 }
 
-const KIND_LABEL = { contact: ["contact", "contacts"], deal: ["deal", "deals"], person: ["team member", "team members"] };
+const KIND_LABEL = { contact: ["contact", "contacts"], deal: ["project", "projects"], person: ["team member", "team members"] };
 const ORDER = ["contact", "deal", "person"];
 
 function mapPane(items) {
@@ -425,10 +425,10 @@ function rail(missing) {
     group("Category",
       pill("All", cat === "all", set(() => { cat = "all"; })),
       CATEGORIES.map((c) => pill(c.many, cat === c.value, set(() => { cat = c.value; layers.contact = true; })))),
-    group("Relationship", pill("Only with a deal", onlyDeal, set(() => { onlyDeal = !onlyDeal; layers.contact = true; }))),
+    group("Relationship", pill("Only with a project", onlyDeal, set(() => { onlyDeal = !onlyDeal; layers.contact = true; }))),
     group("Layers",
       pill("Contacts", layers.contact, set(() => { layers.contact = !layers.contact; }), state.contacts.length),
-      pill("Deals", layers.deal, set(() => { layers.deal = !layers.deal; }), state.deals.length),
+      pill("Projects", layers.deal, set(() => { layers.deal = !layers.deal; }), state.deals.length),
       pill("Team", layers.person, set(() => { layers.person = !layers.person; }), state.people.length)));
 }
 
@@ -458,7 +458,7 @@ function listPane(items) {
         return row;
       })));
   };
-  const parts = [section("deal", "Deals"), section("contact", "Contacts"), section("person", "Team")].filter(Boolean);
+  const parts = [section("deal", "Projects"), section("contact", "Contacts"), section("person", "Team")].filter(Boolean);
   return h("aside", { class: "maplist", "aria-label": "List" },
     (selName || offMap) && h("div", { class: "maplist__head" },
       h("h2", { class: "h3" }, offMap ? "Not on the map" : selName),

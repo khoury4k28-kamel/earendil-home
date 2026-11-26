@@ -1008,3 +1008,39 @@ button.tidy__title:hover { text-decoration: underline; text-underline-offset: 3p
 .srow__why { font-style: italic; }
 .srow > .btn, .srow > .quiet { flex: none; margin-top: 1px; }
 .note .row__meta .link { font-size: inherit; }
+
+/* The pin: the same button wherever a deal, a project or a task shows. Quiet until its card or row is under the pointer; solid once pinned. */
+.pinbtn { flex: none; align-self: center; width: 28px; height: 28px; border-radius: 50%; display: grid; place-items: center; opacity: 0; transition: opacity .12s, background-color .12s; }
+.pinbtn svg { fill: none; stroke: var(--muted); stroke-width: 1.7; stroke-linejoin: round; transform: rotate(35deg); }
+.pinbtn:hover { background: var(--soft); }
+.pinbtn:hover svg { stroke: var(--ink); }
+.pinbtn[aria-pressed="true"] { opacity: 1; }
+.pinbtn[aria-pressed="true"] svg { fill: var(--ink); stroke: var(--ink); }
+:is(.wbox, .wcard, .row, .arow, .wbox__task, .page-head):hover > .pinbtn, :is(.wbox, .wcard, .row, .arow, .page-head):hover :is(.wbox__topr, .wcard__top, .wcard__next, .actions) > .pinbtn, .wbox__task:hover > .pinbtn, .pinbtn:focus-visible { opacity: 1; }
+@media (hover: none) { .pinbtn { opacity: 1; } }
+.wbox__topr { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.wbox__top .pinbtn, .wcard__top .pinbtn { margin: -5px -6px -5px 0; }
+.wcard__top .wcard__n { margin-left: auto; }
+.wcard__next .pinbtn, .wbox__task .pinbtn { align-self: flex-start; margin: -3px -4px 0 0; }
+.pinned { margin-bottom: 20px; }
+
+/* Add project: one question, two answers. */
+.choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding-top: 6px; }
+.choice { display: flex; flex-direction: column; gap: 6px; padding: 18px; border: 1px solid var(--line-2); border-radius: var(--r-l); text-align: left; font-size: 14px; line-height: 1.45; transition: border-color .12s, box-shadow .12s; }
+.choice b { font-size: 16px; }
+.choice:hover, .choice:focus-visible { border-color: var(--ink); box-shadow: 0 6px 20px rgba(10, 10, 10, .06); }
+@media (max-width: 560px) { .choices { grid-template-columns: minmax(0, 1fr); } }
+
+/* Inside a project: the assign picker on a task row, and the Progress view. */
+.tkrow__line > .pick, .srow > .pick { flex: none; align-self: center; margin: 0; max-width: 150px; font-size: 14px; color: var(--text-2); }
+.tkrow__line > .pick--empty, .srow > .pick--empty { color: var(--muted); border: 1px dashed var(--line-2); border-radius: 999px; padding: 3px 24px 3px 10px; }
+.winside__main > .seg { align-self: flex-start; }
+.prog { display: flex; flex-direction: column; gap: 16px; }
+.prog .facts { margin-top: 0; }
+.evday + .evday { margin-top: 14px; }
+.evday__t { font-size: 13px; font-weight: 600; color: var(--muted); padding-bottom: 4px; }
+.evs { margin: 0; padding: 0; list-style: none; }
+.ev { display: flex; gap: 12px; align-items: baseline; padding: 10px 0; border-top: 1px solid var(--line); }
+.ev__kind { flex: none; width: 58px; font-size: 12px; font-weight: 600; color: var(--muted); }
+.ev--done .ev__kind { color: var(--green); }
+.ev__main { flex: 1; min-width: 0; }

@@ -171,7 +171,7 @@ function picksFor(log) {
     if (a.type !== "log_contact" || a.target_type !== "contact") continue;
     for (const d of dealsForContact(a.target_id).filter(isOpenDeal)) {
       if (actions.some((x) => x.type === "log_contact" && x.target_type === "deal" && x.target_id === d.id)) continue;
-      actions.push({ type: "log_contact", target_type: "deal", target_id: d.id, date: a.date, why: `${nameOf("contact", a.target_id)} is a contact on this deal`, on: true });
+      actions.push({ type: "log_contact", target_type: "deal", target_id: d.id, date: a.date, why: `${nameOf("contact", a.target_id)} is a contact on this project`, on: true });
     }
   }
   const pick = { ideas, actions };

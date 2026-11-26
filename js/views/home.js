@@ -16,7 +16,8 @@ import {
   h, avatar, fmtDate, parseDate, todayISO, todayLabel, daysSince, ago, plural, refresh, toast, quickAdd, inlineEdit,
   openDrawer, drawerFrame, block, kv,
 } from "../ui.js";
-import { state, saveSetting, isOpenDeal, create, update, byId, personName, setViewAs } from "../store.js";
+import { state, saveSetting, isOpenDeal, create, update, byId, personName, setViewAs, pinned } from "../store.js";
+import { pinButton, isPinned } from "../pins.js";
 import { openForm } from "../form.js";
 import {
   editRecord, openDeal, openPerson, openContact, dealIssues, stalledDays, pickPerson,
@@ -187,7 +188,7 @@ function workItems() {
     const w = workOf(t);
     if (w && !isActive(w.kind, w.rec)) continue;
     items.push({
-      key: "task:" + t.id, type: "task", belongs, title: t.title, open: w ? () => toWork(w.kind, w.id) : edit, tick: () => finishTask(t),
+      key: "task:" + t.id, type: "task", taskId: t.id, belongs, title: t.title, open: w ? () => toWork(w.kind, w.id) : edit, tick: () => finishTask(t),
       quick: !w, work: w ? w.kind + ":" + w.id : null, tag: workTag(t), workName: w?.name,
       score: overdue ? 100 + Math.min(30, daysSince(t.due)) : soon ? 70 - left : 55,
       action: belongs === "open" ? (meId() ? ["Take it", () => takeTask(t)] : ["Assign", edit]) : ["Done", () => finishTask(t)],
@@ -295,6 +296,7 @@ function taskRows(items) {
     h("button", { class: "check", type: "button", role: "checkbox", "aria-checked": "false", "aria-label": "Done: " + it.title, onclick: it.tick }),
     cell(it, "arow__title"),
     it.action && it.action[0] !== "Done" && h("button", { class: "btn", type: "button", onclick: it.action[1] }, it.action[0]),
+    it.taskId && pinButton("task", it.taskId, it.title),
     h("button", { class: "quiet", type: "button", "aria-label": "Snooze: " + it.title, onclick: () => snooze(it.key) }, "Snooze"))));
 }
 // One switch: whose tasks (Mine / Everyone). Tasks are added on Deals & Tasks,
@@ -320,7 +322,11 @@ function workCard(w, today) {
   const go = () => toWork(w.kind, w.id);
   const stop = (fn) => (e) => { e.stopPropagation(); fn(); };
   const open = tasksOf(w.kind, w.id).filter((t) => t.status !== "done").sort(taskOrder);
-  const next = open[0];
+  // The project's next task, unless that one is a teammate's and one of mine is waiting: then mine.
+  const theirs = (t) => Boolean(t && t.owner_id && t.owner_id !== meId() && personName(t.owner_id));
+  const own = meId() && theirs(open[0]) ? open.find((t) => t.owner_id === meId()) : null;
+  const next = own || open[0];
+  const after = open.filter((t) => t !== next);
   const paused = w.kind === "project" && r.status === "paused";
   const finished = w.kind === "project" && r.status === "done";
   const quiet = w.kind === "deal" ? stalledDays(r) : null;
@@ -329,8 +335,9 @@ function workCard(w, today) {
   return h("li", { class: "wcard" + (finished ? " wcard--done" : "") + (quiet ? " wcard--quiet" : ""), onclick: go },
     h("div", { class: "wcard__top" },
       workMark(w),
-      h("span", { class: "wcard__stage" }, dots([w.kind === "deal" ? stageLabel(r.stage) : finished ? "Finished" : paused ? "On hold" : "Project", owner])),
-      w.total > 0 && h("span", { class: "wcard__n num" }, `${w.done}/${w.total}`)),
+      h("span", { class: "wcard__stage" }, dots([w.kind === "deal" ? stageLabel(r.stage) : finished ? "Finished" : paused ? "On hold" : "Active", owner])),
+      w.total > 0 && h("span", { class: "wcard__n num" }, `${w.done}/${w.total}`),
+      pinButton(w.kind, w.id, w.name)),
     h("a", { class: "wcard__name", href: `#work/${w.kind}:${w.id}`, onclick: (e) => e.stopPropagation() }, w.name),
     steps(w.done, w.total),
     quiet && h("div", { class: "wcard__alert" },
@@ -340,21 +347,23 @@ function workCard(w, today) {
       ? h("div", { class: "wcard__next" },
         h("button", { class: "check", type: "button", role: "checkbox", "aria-checked": "false", "aria-label": "Done: " + next.title, onclick: stop(() => finishTask(next)) }),
         h("div", { class: "wcard__task" },
-          h("div", { class: "wcard__label" }, dots(["Next", next.status === "doing" && "In progress",
+          h("div", { class: "wcard__label" }, dots([own ? "Yours" : "Next", theirs(next) && personName(next.owner_id), next.status === "doing" && "In progress",
             next.due && (late ? red(`Overdue since ${fmtDate(next.due)}`) : `Due ${fmtDate(next.due)}`)])),
-          h("div", { class: "wcard__title" }, next.title)))
+          h("div", { class: "wcard__title" }, next.title)),
+        pinButton("task", next.id, next.title))
       : h("div", { class: "wcard__next wcard__next--none" },
         h("span", null, w.total ? "All tasks done" : w.kind === "deal" ? "No next step" : "No tasks yet"),
         h("span", { class: "link small" }, "Add one"))),
-    open.length > 1 && h("div", { class: "wcard__then" },
-      h("span", { class: "wcard__thent" }, "Then: " + open[1].title),
+    after.length > 0 && h("div", { class: "wcard__then" },
+      h("span", { class: "wcard__thent" }, (own ? "Also: " : "Then: ") + after[0].title),
       open.length > 2 && h("span", { class: "wcard__more" }, `+${open.length - 2}`)));
 }
 function yourWork(rest, snoozedCount) {
   const whose = meId() ? scope || "mine" : "all";
   const mineOnly = whose === "mine";
   const today = todayISO();
-  const pool = allWork().filter((w) => !mineOnly || isOn(w.rec, meId()));
+  // Pinned ones are in the Pinned section above, so they aren't repeated here.
+  const pool = allWork().filter((w) => (!mineOnly || isOn(w.rec, meId())) && !isPinned(w.kind, w.id));
   const live = pool.filter((w) => isLive(w.kind, w.rec));
   const finished = pool.filter((w) => w.kind === "project" && w.rec.status === "done");
   // What needs a person comes first: gone quiet, then no next step, then by the next due date.
@@ -363,11 +372,10 @@ function yourWork(rest, snoozedCount) {
   const list = [...live, ...(workDone ? finished : [])].sort((a, b) => rank(a) - rank(b) ||
     String(a.next?.due || "9").localeCompare(String(b.next?.due || "9")) || a.name.localeCompare(b.name));
   const shown = workAll ? list : list.slice(0, WORK_LIMIT);
-  const kinds = new Set(list.map((w) => w.kind));
-  const name = kinds.size === 1 ? (kinds.has("deal") ? "deals" : "projects") : "deals and projects";
+  const name = "projects";
   // Tasks no card covers: ones that belong to nothing, or to work that isn't in this list.
   const inList = new Set(list.map((w) => w.kind + ":" + w.id));
-  const loose = rest.filter((it) => it.type === "task" && (mineOnly ? it.belongs === "mine" : true) && !(it.work && inList.has(it.work)));
+  const loose = rest.filter((it) => it.type === "task" && !isPinned("task", it.taskId) && (mineOnly ? it.belongs === "mine" : true) && !(it.work && inList.has(it.work)));
   const looseShown = showAll ? loose : loose.slice(0, TASK_LIMIT);
   const mineCount = allWork().filter((w) => isLive(w.kind, w.rec) && isOn(w.rec, meId())).length;
   const allCount = allWork().filter((w) => isLive(w.kind, w.rec)).length;
@@ -384,6 +392,31 @@ function yourWork(rest, snoozedCount) {
       h("div", { class: "wloose__title" }, `Other tasks · ${loose.length}`),
       taskRows(looseShown),
       moreBtn(loose.length - looseShown.length, showAll, () => { showAll = !showAll; refresh(); })));
+}
+
+// ---------- pinned: what this person chose to keep at the top ----------
+// The same pins as on Deals & Tasks. Deals and projects show as their cards,
+// tasks as rows; a finished task drops off on its own.
+function pinnedSection() {
+  const today = todayISO();
+  const pins = new Set([...pinned("deal").map((d) => "deal:" + d.id), ...pinned("project").map((p) => "project:" + p.id)]);
+  const work = allWork().filter((w) => pins.has(w.kind + ":" + w.id));
+  // A pinned task already showing as the next step on a pinned card isn't listed twice.
+  const onCard = new Set(work.map((w) => w.next?.id));
+  const tasks = pinned("task").filter((t) => t.status !== "done" && !onCard.has(t.id));
+  if (!work.length && !tasks.length) return null;
+  return section(`Pinned · ${work.length + tasks.length}`, null,
+    work.length > 0 && h("ul", { class: "wcards" }, work.map((w) => workCard(w, today))),
+    tasks.length > 0 && h("ul", { class: work.length ? "wloose" : null }, tasks.map((t) => {
+      const w = workOf(t);
+      const late = t.due && t.due < today;
+      const it = { title: t.title, tag: workTag(t), open: w ? () => toWork(w.kind, w.id) : () => editRecord("tasks", t),
+        meta: [t.owner_id !== meId() && personName(t.owner_id), late ? red(`Overdue since ${fmtDate(t.due)}`) : t.due && `Due ${fmtDate(t.due)}`, t.status === "doing" && "In progress"] };
+      return h("li", { class: "arow trow" },
+        h("button", { class: "check", type: "button", role: "checkbox", "aria-checked": "false", "aria-label": "Done: " + t.title, onclick: () => finishTask(t) }),
+        cell(it, "arow__title"),
+        pinButton("task", t.id, t.title));
+    })));
 }
 
 // ---------- from Slack: updates waiting for a yes or no ----------
@@ -426,7 +459,7 @@ function upForGrabs(rest) {
     ...state.projects.filter((p) => (p.status || "active") === "active" && !personName(p.owner_id) && !isOn(p, meId())).sort((a, b) => a.name.localeCompare(b.name))
       .map((p) => ({ title: p.name, text: "Project", open: () => openProject(p.id), take: () => takeProject(p) })),
     ...state.deals.filter((d) => isOpenDeal(d) && !personName(d.owner_id) && !onDeal(d)).sort((a, b) => a.name.localeCompare(b.name))
-      .map((d) => ({ title: d.name, text: ["Deal", stageLabel(d.stage), d.organisation !== d.name && d.organisation].filter(Boolean).join(" · "), open: () => openDeal(d.id), take: () => takeDeal(d) })),
+      .map((d) => ({ title: d.name, text: ["Project", stageLabel(d.stage), d.organisation !== d.name && d.organisation].filter(Boolean).join(" · "), open: () => openDeal(d.id), take: () => takeDeal(d) })),
   ];
   if (!rows.length) return null;
   const shown = grabsAll ? rows : rows.slice(0, 4);
@@ -467,7 +500,7 @@ function changes() {
     seen.add(a.entity_type + ":" + a.entity_id);
     rows.push({ at: a.created_at, mine: isMine(a.entity_type, rec), title: rec.name, text: a.body, by: a.author, open: () => kind[1](rec.id) });
   }
-  const tables = [["deals", "deal", (r) => openDeal(r.id), "Deal"], ["projects", "project", (r) => openProject(r.id), "Project"], ["contacts", "contact", (r) => openContact(r.id), "Contact"],
+  const tables = [["deals", "deal", (r) => openDeal(r.id), "Project"], ["projects", "project", (r) => openProject(r.id), "Project"], ["contacts", "contact", (r) => openContact(r.id), "Contact"],
     ["tasks", "task", (r) => editRecord("tasks", r), "Task"], ["milestones", "date", (r) => editRecord("milestones", r), "Date"]];
   for (const [table, type, open, noun] of tables) for (const r of state[table]) {
     if (!r.updated_at || String(r.updated_at) <= from || seen.has(type + ":" + r.id)) continue;
@@ -516,11 +549,11 @@ function tidy() {
   const noEmail = state.people.filter((p) => !p.email && (!me || p.id === me));
   const yours = me ? "of your " : "";
   const rows = [
-    noOwner.length && { key: "owner", title: `${plural(noOwner.length, "deal has", "deals have")} no owner`,
+    noOwner.length && { key: "owner", title: `${plural(noOwner.length, "project has", "projects have")} no owner`,
       body: () => noOwner.map((d) => line(d, () => openDeal(d.id), pickPerson({ value: d.owner_id, blank: "Choose owner", label: `Owner of ${d.name}`, onChange: (v) => update("deals", d.id, { owner_id: v }) }))) },
-    noTouch.length && { key: "touch", title: `${noTouch.length} ${yours}${noTouch.length === 1 ? "deal has" : "deals have"} no contact date`,
+    noTouch.length && { key: "touch", title: `${noTouch.length} ${yours}${noTouch.length === 1 ? "project has" : "projects have"} no contact date`,
       body: () => noTouch.map((d) => line(d, () => openDeal(d.id), inlineEdit({ id: `tidy-touch-${d.id}`, value: "", placeholder: "Add date", label: `Last contact on ${d.name}`, type: "date", onSave: (v) => update("deals", d.id, { last_touch: v }) }))) },
-    toConfirm.length && { key: "confirm", title: `${toConfirm.length} ${yours}${toConfirm.length === 1 ? "deal has" : "deals have"} details to confirm`,
+    toConfirm.length && { key: "confirm", title: `${toConfirm.length} ${yours}${toConfirm.length === 1 ? "project has" : "projects have"} details to confirm`,
       body: () => toConfirm.map((d) => h("li", { class: "arow" },
         h("button", { class: "arow__main", type: "button", onclick: () => openDeal(d.id) }, h("div", { class: "arow__title" }, d.name), h("div", { class: "arow__text" }, d.to_confirm)),
         smallBtn("Confirmed", () => clearToConfirm(d)))) },
@@ -554,16 +587,16 @@ function tidy() {
 // ---------- the lines under the greeting ----------
 // The state of things in a sentence: your own deals if you have any, else the company's.
 function pulse() {
-  const open = state.deals.filter(isOpenDeal);
-  const mine = open.filter(onDeal);
+  const open = allWork().filter((w) => isLive(w.kind, w.rec));
+  const mine = open.filter((w) => isOn(w.rec, meId()));
   const set = mine.length ? mine : open;
-  const quiet = set.filter((d) => stalledDays(d) != null).length;
+  const quiet = set.filter((w) => w.kind === "deal" && stalledDays(w.rec) != null).length;
   const next = state.milestones.filter((m) => !m.team_id && m.status !== "done" && parseDate(m.date) && -daysSince(m.date) >= 0)
     .sort((a, b) => a.date.localeCompare(b.date))[0];
   const left = next ? -daysSince(next.date) : null;
   return h("div", { class: "pulse" }, dots([
     todayLabel(),
-    set.length > 0 && h("a", { href: "#deals" }, mine.length ? `${plural(mine.length, "open deal")} of yours` : plural(open.length, "open deal")),
+    set.length > 0 && h("a", { href: "#work" }, mine.length ? `${plural(mine.length, "open project")} of yours` : plural(open.length, "open project")),
     quiet > 0 && h("a", { href: "#deals", class: "red" }, `${quiet} gone quiet`),
     next && h("button", { type: "button", onclick: () => editRecord("milestones", next) }, left === 0 ? `${next.title} is today` : `${plural(left, "day")} to ${next.title}`),
   ]));
@@ -638,7 +671,7 @@ export function render() {
     h("div", { class: "home__head page-head__text" }, h("h1", { class: "h1" }, greeting()), pulse(), yourUpdate()),
     h("div", { class: "home__main" },
       claim(),
-      today(top), fromSlack(), yourWork(rest, hiddenCount), reconnect(rest), upForGrabs(rest), changes(), goals(),
+      today(top), pinnedSection(), fromSlack(), yourWork(rest, hiddenCount), reconnect(rest), upForGrabs(rest), changes(), goals(),
       comingUp(new Set(top.filter((it) => it.type === "date").map((it) => it.id))), tidy(),
       h("button", { class: "missionline", type: "button", onclick: openAbout, title: "Mission, values and what we sell" }, (mission || "Write the mission") + " →")),
     news);

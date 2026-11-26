@@ -22,10 +22,10 @@ import * as log from "./views/log.js";
 // is kept, is next. Deal Tracker sits under CRM.
 const TABS = [
   { id: "home", label: "Home", view: home },
-  { id: "work", label: "Deals & Tasks", view: worktab, count: () => state.tasks.filter((t) => t.status !== "done").length },
+  { id: "work", label: "Projects & Tasks", view: worktab, count: () => state.tasks.filter((t) => t.status !== "done").length },
   { id: "teams", label: "Teams", view: teams, count: () => state.people.length },
   { id: "crm", label: "CRM", view: crm, count: () => state.contacts.length + state.people.length },
-  { id: "deals", label: "Deal Tracker", view: deals, count: () => state.deals.filter(isOpenDeal).length },
+  { id: "deals", label: "Project Tracker", view: deals, count: () => state.deals.filter(isOpenDeal).length },
   { id: "docs", label: "Documents", view: docs, count: () => state.documents.filter((d) => !d.archive).length },
   { id: "log", label: "Log", view: log, show: logReady },
 ];

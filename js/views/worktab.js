@@ -4,15 +4,18 @@
 // its tasks, the subtasks under each, and how far along they are. Home only
 // gathers from here.
 
-import { h, refresh, quickAdd, fmtDate, fmtDateTime, fmtRange, plural, avatar, kv } from "../ui.js";
-import { state, create, update, personName, byId, sortByName, notesFor, addNote, fileUrl, projectsForDeal } from "../store.js";
+import { h, refresh, toast, ago, quickAdd, fmtDate, fmtDateTime, fmtRange, plural, avatar, kv } from "../ui.js";
+import { state, create, update, personName, byId, sortByName, notesFor, addNote, fileUrl, projectsForDeal, pinned } from "../store.js";
+import { pinButton, isPinned } from "../pins.js";
 import { stageLabel, projectStatusLabel, categoryLabel } from "../schema.js";
-import { editRecord, openWork, workMark, stalledDays, personChip, openContact, noteMeta } from "../detail.js";
-import { allWork, isLive, isOn, tasksOf, subtasksOf, subtasksReady, addSubtask, taskOrder, progress, docsFor, docsReady } from "../work.js";
+import { editRecord, addProject, openWork, workMark, stalledDays, personChip, openContact, openPerson, noteMeta, pickPerson } from "../detail.js";
+import { allWork, workOf, isLive, isOn, tasksOf, subtasksOf, subtasksReady, addSubtask, taskOrder, progress, docsFor, docsReady } from "../work.js";
 
 let scope = null;        // "mine" or "all"; mine once the hub knows who is looking
 let showFinished = false;
 let showDone = false;
+let pageView = "tasks";   // inside a project: its tasks, or its progress
+let pageKey = "";
 
 const meId = () => state.me.id;
 const key = (w) => w.kind + ":" + w.id;
@@ -33,8 +36,9 @@ function meter(done, total) {
 }
 
 function workList(mine) {
-  const pool = allWork().filter((w) => !mine || isOn(w.rec, meId()));
-  const order = (a, b) => String(a.next?.due || "9").localeCompare(String(b.next?.due || "9")) || a.name.localeCompare(b.name);
+  const pool = allWork().filter((w) => !mine || isOn(w.rec, meId()) || isPinned(w.kind, w.id));
+  // Pinned ones come first, whoever they belong to.
+  const order = (a, b) => Number(isPinned(b.kind, b.id)) - Number(isPinned(a.kind, a.id)) || String(a.next?.due || "9").localeCompare(String(b.next?.due || "9")) || a.name.localeCompare(b.name);
   return { live: pool.filter((w) => isLive(w.kind, w.rec)).sort(order), finished: pool.filter((w) => !isLive(w.kind, w.rec)).sort(order) };
 }
 
@@ -53,7 +57,8 @@ function boxTask(t, isNext) {
     }),
     h("div", { class: "wbox__tt" },
       h("div", { class: "wbox__ttitle" }, isNext && h("span", { class: "next" }, "Next"), t.title),
-      meta && h("div", { class: "wbox__tmeta" }, meta)));
+      meta && h("div", { class: "wbox__tmeta" }, meta)),
+    pinButton("task", t.id, t.title));
 }
 // RULE: a document only shows with its own thumbnail; if the picture fails the whole preview goes.
 function boxDoc(docs) {
@@ -82,8 +87,10 @@ function box(w) {
   return h("div", { class: "wbox" + (docs.length ? " wbox--doc" : "") + (quiet ? " wbox--quiet" : "") + (open.length > MAX_TASKS ? " wbox--busy wbox--full" : open.length > 1 ? " wbox--busy" : ""), onclick: () => { location.hash = href; } },
     h("div", { class: "wbox__top" },
       h("span", { class: "wbox__kind" }, workMark(w), isDeal ? stageLabel(r.stage) : projectStatusLabel(r.status)),
-      quiet ? h("span", { class: "stalled" }, `No contact in ${quiet} days`)
-        : isDeal && r.last_touch && h("span", null, "Last contact " + fmtDate(r.last_touch))),
+      h("span", { class: "wbox__topr" },
+        quiet ? h("span", { class: "stalled" }, `No contact in ${quiet} days`)
+          : isDeal && r.last_touch && h("span", null, "Last contact " + fmtDate(r.last_touch)),
+        pinButton(w.kind, w.id, w.name))),
     h("a", { class: "wbox__name", href, onclick: (e) => e.stopPropagation() }, w.name),
     h("div", { class: "wbox__sub" }, [isDeal && r.organisation, isDeal && r.region, !isDeal && r.due && "Due " + fmtDate(r.due)].filter(Boolean).join(" · ")),
     h("div", { class: "wbox__body" },
@@ -107,26 +114,41 @@ function box(w) {
 function newBox(add) {
   return h("div", { class: "wbox wbox--new" },
     h("div", { class: "wbox__newt" }, "Start something new"),
-    h("div", { class: "wbox__newb" }, add.slice(1).reverse()));
+    h("div", { class: "wbox__newb" }, add.slice(1)));
 }
 const addButtons = (belongs = {}) => [
   h("button", { class: "btn", type: "button", onclick: () => editRecord("tasks", null, { status: "todo", owner_id: meId() || null, ...belongs }) }, "Add task"),
-  h("button", { class: "btn", type: "button", onclick: () => editRecord("projects", null, { status: "active", owner_id: meId() || null, people_ids: [] }, (row) => go("project:" + row.id)) }, "Add project"),
-  h("button", { class: "btn btn--primary", type: "button", onclick: () => editRecord("deals", null, { stage: "lead", kind: "customer", owner_id: meId() || null, people_ids: [], contact_ids: [] }, (row) => go("deal:" + row.id)) }, "Add deal"),
+  h("button", { class: "btn btn--primary", type: "button", onclick: () => addProject((kind, row) => go(kind + ":" + row.id)) }, "Add project"),
 ];
+// Pinned tasks, above the boxes: each opens the deal or project it sits in.
+function pinnedTasks() {
+  const list = pinned("task").filter(isOpen);
+  if (!list.length) return null;
+  return h("section", { class: "panel pinned" },
+    h("div", { class: "panel__head" }, h("h2", { class: "eyebrow" }, `Pinned tasks · ${list.length}`)),
+    h("div", { class: "panel__body" }, h("ul", { class: "rows" }, list.map((t) => {
+      const w = workOf(t);
+      const meta = [w?.name, taskMeta(t)].filter(Boolean).join(" · ");
+      return h("li", { class: "row" }, tick(t),
+        h("button", { class: "row__main rowbtn", type: "button", onclick: () => (w ? go(key(w)) : editRecord("tasks", t)) },
+          h("div", { class: "row__title" }, t.title), meta && h("div", { class: "row__meta" }, meta)),
+        pinButton("task", t.id, t.title));
+    }))));
+}
 function boxes() {
   const mine = whose() === "mine";
   const { live, finished } = workList(mine);
   return h("main", { class: "page page--boxes" },
     h("div", { class: "page-head" },
-      h("h1", { class: "h1" }, "Deals & Tasks"),
+      h("h1", { class: "h1" }, "Projects & Tasks"),
       h("div", { class: "actions" },
         meId() && seg("Whose work", [["mine", "Mine"], ["all", "Everyone"]], whose(), (v) => { scope = v; }),
         addButtons())),
+    pinnedTasks(),
     live.length + (showFinished ? finished.length : 0) > 0
       ? h("div", { class: "wboxes" }, live.map(box), showFinished && finished.map(box),
         (live.length + (showFinished ? finished.length : 0)) % 2 === 1 && newBox(addButtons()))
-      : h("div", { class: "empty" }, h("div", null, h("b", null, mine ? "No deals or projects of yours yet." : "No deals or projects yet."))),
+      : h("div", { class: "empty" }, h("div", null, h("b", null, mine ? "No projects of yours yet." : "No projects yet."))),
     finished.length > 0 && h("button", { class: "more", type: "button", onclick: () => { showFinished = !showFinished; refresh(); } },
       showFinished ? "Hide finished" : `${finished.length} finished · Show`));
 }
@@ -140,22 +162,32 @@ function tick(t) {
     onclick: () => update("tasks", t.id, { status: t.status === "done" ? "todo" : "done" }),
   });
 }
-const taskMeta = (t) => [personName(t.owner_id), t.status === "doing" && "In progress", t.due && "Due " + fmtDate(t.due)].filter(Boolean).join(" · ");
+const taskMeta = (t, owner = true) => [owner && personName(t.owner_id), t.status === "doing" && "In progress", t.due && "Due " + fmtDate(t.due)].filter(Boolean).join(" · ");
+// Who does a task, chosen on the row. It then shows on that person's Home.
+function assign(t) {
+  return pickPerson({ id: `wk-own-${t.id}`, value: t.owner_id, blank: "Assign", label: "Who does: " + t.title, onChange: (v) => {
+    const before = t.owner_id || null;
+    update("tasks", t.id, { owner_id: v });
+    toast(v ? `Assigned to ${personName(v)}. It shows on their Home.` : "Nobody is on it now.", ["Undo", () => update("tasks", t.id, { owner_id: before })]);
+  } });
+}
 function subRow(s) {
-  const meta = taskMeta(s);
+  const meta = taskMeta(s, false);
   return h("li", { class: "row srow" + (s.status === "done" ? " done" : "") }, tick(s),
     h("button", { class: "row__main rowbtn", type: "button", onclick: () => editRecord("tasks", s) },
-      h("div", { class: "row__title" }, s.title), meta && h("div", { class: "row__meta" }, meta)));
+      h("div", { class: "row__title" }, s.title), meta && h("div", { class: "row__meta" }, meta)),
+    assign(s), pinButton("task", s.id, s.title));
 }
 function taskRow(t, isNext) {
   const subs = subtasksOf(t.id);
   const subsDone = subs.filter((s) => !isOpen(s)).length;
-  const meta = taskMeta(t);
+  const meta = taskMeta(t, false);
   return h("li", { class: "tkrow" + (t.status === "done" ? " done" : "") },
     h("div", { class: "row tkrow__line" }, tick(t),
       h("button", { class: "row__main rowbtn", type: "button", onclick: () => editRecord("tasks", t) },
         h("div", { class: "row__title" }, isNext && h("span", { class: "next" }, "Next"), t.title),
         meta && h("div", { class: "row__meta" }, meta)),
+      assign(t), pinButton("task", t.id, t.title),
       subs.length > 0 && h("span", { class: "tkrow__n num", title: `${subsDone} of ${subs.length} subtasks done` }, `${subsDone}/${subs.length}`),
       subs.length > 0 && h("span", { class: "bar", role: "img", "aria-label": `${subsDone} of ${subs.length} subtasks done` },
         h("span", { style: `width:${Math.round((subsDone / subs.length) * 100)}%` }))),
@@ -163,18 +195,19 @@ function taskRow(t, isNext) {
       subs.length > 0 && h("ul", { class: "rows" }, subs.map(subRow)),
       subtasksReady() && isOpen(t) && quickAdd(`wk-sub-${t.id}`, "Add a subtask", (title) => addSubtask(t, title))));
 }
-function inside({ crumb, facts, done, total, tasks, addId, addLabel, onAdd, actions, markNext, side }) {
+function inside({ crumb, facts, done, total, tasks, addId, addLabel, onAdd, actions, markNext, side, progressView }) {
   const open = tasks.filter(isOpen).sort(taskOrder);
   const finished = tasks.filter((t) => !isOpen(t)).sort(taskOrder);
   return h("main", { class: "page" },
     h("div", { class: "page-head" },
-      h("div", { class: "crumbs crumbs--page" }, h("a", { href: "#work" }, "Deals & Tasks"), h("span", { class: "muted" }, " / "), h("b", null, crumb)),
+      h("div", { class: "crumbs crumbs--page" }, h("a", { href: "#work" }, "Projects & Tasks"), h("span", { class: "muted" }, " / "), h("b", null, crumb)),
       h("div", { class: "actions" }, actions)),
     h("div", { class: "winside" },
       h("div", { class: "winside__main" },
       h("div", { class: "sub" }, facts),
       meter(done, total),
-      h("section", { class: "panel" },
+      seg("Show", [["tasks", "Tasks"], ["progress", "Progress"]], pageView, (v) => { pageView = v; }),
+      pageView === "progress" ? progressView() : h("section", { class: "panel" },
         h("div", { class: "panel__head" }, h("h2", { class: "eyebrow" }, `Tasks · ${open.length} open`)),
         h("div", { class: "panel__body" },
           open.length > 0 && h("ul", { class: "tkrows" }, open.map((t, i) => taskRow(t, markNext && i === 0))),
@@ -228,7 +261,7 @@ function docRow(d, { doc, linked }) {
       h("span", { class: "gdoc__thumb" }, img),
       h("span", { class: "gdoc__text" }, h("span", { class: "gdoc__title" }, doc.title),
         h("span", { class: "row__meta" }, [doc.category, doc.pages && plural(doc.pages, "page"), fmtDate(doc.date)].filter(Boolean).join(" · ")))),
-    linked && h("button", { class: "more more--head", type: "button", title: "Take this document off the deal",
+    linked && h("button", { class: "more more--head", type: "button", title: "Take this document off the project",
       onclick: () => update("deals", d.id, { document_ids: (d.document_ids || []).filter((x) => x !== doc.id) }) }, "Unlink"));
 }
 function docsBlock(d) {
@@ -242,7 +275,7 @@ function docsBlock(d) {
 function projectsBlock(d) {
   const list = projectsForDeal(d.id);
   if (!list.length) return null;
-  return gathered("Projects under this deal", list.length, h("ul", { class: "rows" }, list.map((p) => {
+  return gathered("Projects under this one", list.length, h("ul", { class: "rows" }, list.map((p) => {
     const pr = progress("project", p.id);
     return h("li", { class: "row grow" }, workMark({ kind: "project", rec: p }),
       h("a", { class: "row__main rowbtn", href: `#work/project:${p.id}` },
@@ -268,7 +301,7 @@ function aboutBlock(w) {
     ["Region", isDeal && r.region],
     ["Size", size],
     ["Last contact", isDeal && r.last_touch && fmtDate(r.last_touch)],
-    ["Deal", parent && h("a", { class: "link", href: `#work/deal:${parent.id}` }, parent.name)],
+    ["Part of", parent && h("a", { class: "link", href: `#work/deal:${parent.id}` }, parent.name)],
     ["To confirm", isDeal && r.to_confirm],
   ].filter(([, v]) => v);
   if (!r.summary && !rows.length) return null;
@@ -280,7 +313,62 @@ function sideOf(w) {
     ? [aboutBlock(w), teamBlock("deals", r), contactsBlock(r), docsBlock(r), projectsBlock(r), notesBlock("deal", r.id)]
     : [aboutBlock(w), teamBlock("projects", r), notesBlock("project", r.id)];
 }
+// ---------- progress: what has happened on this project ----------
+// One timeline, newest first: what the team wrote about it (in the Log, in
+// Slack or as a note), and the tasks finished and added. Above it, where the
+// project stands and who has what.
+const dayOf = (iso) => String(iso || "").slice(0, 10);
+function progressOf(w) {
+  const r = w.rec;
+  const tasks = tasksOf(w.kind, w.id);
+  const all = [...tasks, ...tasks.flatMap((t) => subtasksOf(t.id))];
+  const events = [];
+  for (const n of notesFor(w.kind, w.id)) events.push({ at: n.created_at, kind: n.source === "log" ? "Log" : n.source === "slack" ? "Slack" : n.source === "system" ? "Update" : "Note", text: n.body, meta: noteMeta(n) });
+  // What was logged about this project's outside contacts counts too.
+  for (const c of (w.kind === "deal" ? r.contact_ids || [] : []).map((id) => byId("contacts", id)).filter(Boolean)) {
+    for (const n of notesFor("contact", c.id)) events.push({ at: n.created_at, kind: n.source === "log" ? "Log" : n.source === "slack" ? "Slack" : "Note", text: [h("b", null, c.name + ": "), n.body], meta: noteMeta(n) });
+  }
+  for (const t of all) {
+    if (t.status === "done") events.push({ at: t.updated_at || null, kind: "Done", done: true, text: t.title, meta: personName(t.owner_id) && h("div", { class: "row__meta" }, personName(t.owner_id)) });
+    else if (t.created_at) events.push({ at: t.created_at, kind: "Added", text: t.title, meta: personName(t.owner_id) && h("div", { class: "row__meta" }, "For " + personName(t.owner_id)) });
+  }
+  const dated = events.filter((e) => e.at).sort((a, b) => String(b.at).localeCompare(String(a.at)));
+  const undated = events.filter((e) => !e.at);
+  const week = new Date(Date.now() - 7 * 864e5).toISOString();
+  const doneWeek = dated.filter((e) => e.done && e.at >= week).length;
+  const last = dated[0]?.at;
+  const fact = (label, value) => h("div", { class: "fact" }, h("span", { class: "small muted" }, label), h("span", { class: "fact__v num" }, value));
+  // Who has what: everyone on the project or holding one of its tasks.
+  const ids = [...new Set([r.owner_id, ...(r.people_ids || []), ...all.map((t) => t.owner_id)])].filter((id) => byId("people", id));
+  const load = ids.map((id) => ({ id, name: personName(id), open: all.filter((t) => t.owner_id === id && isOpen(t)).length, done: all.filter((t) => t.owner_id === id && !isOpen(t)).length }));
+  const nobody = all.filter((t) => isOpen(t) && !byId("people", t.owner_id)).length;
+  const row = (e) => h("li", { class: "ev" + (e.done ? " ev--done" : "") },
+    h("span", { class: "ev__kind" }, e.kind),
+    h("div", { class: "ev__main" }, h("div", { class: "prose" }, e.text), e.meta));
+  const days = [];
+  for (const e of dated) { const d = dayOf(e.at); if (days.at(-1)?.day !== d) days.push({ day: d, list: [] }); days.at(-1).list.push(e); }
+  return h("div", { class: "prog" },
+    h("div", { class: "facts" },
+      fact("Tasks done", w.total ? `${w.done} of ${w.total}` : "No tasks yet"),
+      fact("Done in the last 7 days", String(doneWeek)),
+      fact("Last activity", last ? ago(last) : "None yet")),
+    load.length > 0 && h("section", { class: "panel" },
+      h("div", { class: "panel__head" }, h("h2", { class: "eyebrow" }, "Who has what")),
+      h("div", { class: "panel__body" }, h("ul", { class: "rows" },
+        load.map((p) => h("li", { class: "row grow" }, avatar(p.name, "s"),
+          h("button", { class: "row__main rowbtn", type: "button", onclick: () => openPerson(p.id) }, h("div", { class: "row__title" }, p.name)),
+          h("span", { class: "small muted num" }, `${p.open} open · ${p.done} done`))),
+        nobody > 0 && h("li", { class: "row grow" }, h("div", { class: "row__main muted" }, "Not assigned yet"), h("span", { class: "small muted num" }, `${nobody} open`))))),
+    h("section", { class: "panel" },
+      h("div", { class: "panel__head" }, h("h2", { class: "eyebrow" }, "Recent activity")),
+      h("div", { class: "panel__body" },
+        !events.length && h("div", { class: "muted" }, "Nothing has happened here yet. What the team writes in the Log about this project shows here, with tasks as they are finished."),
+        days.map((d) => h("div", { class: "evday" }, h("div", { class: "evday__t" }, fmtDate(d.day)), h("ul", { class: "evs" }, d.list.map(row)))),
+        undated.length > 0 && h("div", { class: "evday" }, h("div", { class: "evday__t" }, dated.length ? "Earlier" : "Done so far"), h("ul", { class: "evs" }, undated.map(row))))));
+}
+
 function workPage(w) {
+  if (pageKey !== key(w)) { pageKey = key(w); pageView = "tasks"; }
   const r = w.rec;
   const isDeal = w.kind === "deal";
   const belongs = isDeal ? { deal_id: w.id, project_id: null } : { project_id: w.id, deal_id: null };
@@ -291,8 +379,8 @@ function workPage(w) {
     done: w.done, total: w.total, tasks: tasksOf(w.kind, w.id), markNext: true,
     addId: `wk-task-${w.kind}-${w.id}`, addLabel: "Add a task",
     onAdd: (title) => create("tasks", { title, status: "todo", ...belongs, owner_id: meId() || r.owner_id || null }),
-    actions: h("button", { class: "btn", type: "button", onclick: () => openWork(w.kind, w.id) }, isDeal ? "Deal details" : "Project details"),
-    side: sideOf(w),
+    actions: [pinButton(w.kind, w.id, w.name), h("button", { class: "btn", type: "button", onclick: () => openWork(w.kind, w.id) }, "Project details")],
+    side: sideOf(w), progressView: () => progressOf(w),
   });
 }
 export function render(sub) {
