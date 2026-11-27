@@ -959,7 +959,7 @@ button.tidy__title:hover { text-decoration: underline; text-underline-offset: 3p
 .sendbtn.is-ready { background: var(--ink); color: #fff; }
 .sendbtn.is-ready:hover { background: #2A2A2A; }
 /* The Log tab: a conversation in a column down the middle. */
-.page--log { max-width: none; padding-top: 0; padding-bottom: 0; gap: 0; align-items: center; min-height: 100vh; }
+.page--log { max-width: none; padding: 0; gap: 0; min-height: 100vh; }
 .chat { width: 100%; max-width: 740px; flex: 1; display: flex; flex-direction: column; }
 .chat--hero { justify-content: center; padding-bottom: 14vh; }
 .chat__hero { display: flex; flex-direction: column; gap: 26px; }
@@ -1125,3 +1125,53 @@ button.tidy__title:hover { text-decoration: underline; text-underline-offset: 3p
 /* A record's name inside a text box, in blue. The copy of the text sits behind the box. */
 .slashback { position: absolute; box-sizing: border-box; margin: 0; border: 0 solid transparent; overflow: hidden; pointer-events: none; overflow-wrap: break-word; }
 .slashname { color: #2B55C9; background: #E6EDFF; border-radius: 5px; box-shadow: 0 0 0 2px #E6EDFF; font: inherit; }
+
+/* The Log tab: your logs listed down the left, one per day, and the open one beside them. */
+.logwrap { display: flex; align-items: stretch; width: 100%; min-height: 100vh; }
+.logmain { flex: 1; min-width: 0; display: flex; justify-content: center; padding: 0 var(--gutter); }
+.logside { flex: none; width: 264px; position: sticky; top: 0; align-self: flex-start; height: 100vh; overflow-y: auto; padding: 18px 10px 24px; border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 18px; }
+.logside__new { display: flex; align-items: center; gap: 9px; width: 100%; padding: 9px 12px; border: 1px solid var(--line-2); border-radius: 10px; font-weight: 500; font-size: 14px; text-align: left; }
+.logside__new:hover { background: var(--soft); }
+.logside__new[aria-current="true"] { background: var(--soft-2); border-color: transparent; }
+.logside__group { display: flex; flex-direction: column; gap: 1px; }
+.logside__label { padding: 0 12px 6px; font-size: 12px; font-weight: 500; color: var(--muted); }
+.logside__row { display: flex; flex-direction: column; gap: 1px; width: 100%; padding: 8px 12px; border-radius: 9px; text-align: left; min-width: 0; }
+.logside__row:hover { background: var(--soft); }
+.logside__row[aria-current="true"] { background: var(--soft-2); }
+.logside__title { font-size: 14px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.logside__sub { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); }
+.logside__dot { width: 6px; height: 6px; border-radius: 50%; background: #2B55C9; flex: none; }
+.logside__none { padding: 0 12px; }
+.chat__past { display: flex; align-items: center; justify-content: center; gap: 14px; padding: 14px 0 6px; font-size: 14px; }
+@media (max-width: 860px) {
+  .logwrap { flex-direction: column; }
+  .logside { position: static; width: auto; height: auto; max-height: 34vh; border-right: 0; border-bottom: 1px solid var(--line); }
+}
+
+/* The Log list: fold, drag to a width, search, and a menu on each row. */
+.logside { position: sticky; }
+.logside--mini { width: 52px; padding: 16px 8px; gap: 6px; align-items: center; }
+.logside__top { display: flex; align-items: center; gap: 6px; }
+.logside__top .logside__new { flex: 1; min-width: 0; }
+.logside__icon { flex: none; width: 36px; height: 36px; border-radius: 9px; display: grid; place-items: center; color: var(--text-2); }
+.logside__icon:hover { background: var(--soft); color: var(--ink); }
+.logside__find { display: flex; align-items: center; gap: 8px; padding: 0 12px; height: 34px; border-radius: 9px; background: var(--soft); color: var(--muted); }
+.logside__search { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; font-size: 14px; color: var(--ink); }
+.logside__find:focus-within { box-shadow: 0 0 0 1px var(--line-2); }
+.logside__item { position: relative; }
+.logside__item .logside__row { padding-right: 34px; }
+.logside__more { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 28px; height: 28px; border-radius: 7px; display: grid; place-items: center; color: var(--text-2); opacity: 0; }
+.logside__item:hover .logside__more, .logside__more:focus-visible, .logside__item.is-open .logside__more { opacity: 1; }
+.logside__more:hover, .logside__item.is-open .logside__more { background: var(--line); color: var(--ink); }
+.logside__menu { position: absolute; right: 4px; top: calc(50% + 16px); z-index: 6; min-width: 150px; padding: 5px; border: 1px solid var(--line-2); border-radius: 11px; background: var(--bg); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12); display: flex; flex-direction: column; }
+.logside__menu button { padding: 7px 10px; border-radius: 7px; text-align: left; font-size: 14px; white-space: nowrap; }
+.logside__menu button:hover { background: var(--soft-2); }
+.logside__rename { width: 100%; padding: 8px 11px; border: 1px solid var(--ink); border-radius: 9px; outline: 0; font-size: 14px; font-weight: 500; background: var(--bg); }
+.logside__grip { position: absolute; top: 0; right: 0; width: 6px; height: 100%; cursor: col-resize; z-index: 3; }
+.logside__grip:hover, .is-sizing .logside__grip { background: linear-gradient(to right, transparent 4px, var(--line-2) 4px); }
+.is-sizing { cursor: col-resize; user-select: none; }
+@media (max-width: 860px) {
+  .logside, .logside--mini { width: auto !important; }
+  .logside--mini { flex-direction: row; justify-content: flex-start; height: auto; }
+  .logside__grip { display: none; }
+}

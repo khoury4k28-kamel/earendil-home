@@ -377,9 +377,9 @@ export function logPanel({ device = "hub", history: limit = null } = {}) {
 // wrote sits on the right; what the hub made of it answers on the left: still
 // reading, a check card, or the updates that went in. The box stays at the
 // foot. A day with nothing in it yet opens on the box alone, mid-screen.
-let showEarlier = false;
+let selDay = null;       // the day whose log is open; null = today
 let lastThread = null;
-window.addEventListener("hashchange", () => { showEarlier = false; lastThread = null; });
+window.addEventListener("hashchange", () => { selDay = null; lastThread = null; });
 
 function answer(log) {
   if (log.status !== "applied") return log.status === "read" && log.proposal && !busy.has(log.id) ? review(log) : pending(log);
@@ -400,31 +400,186 @@ function turn(log) {
     h("div", { class: "msg msg--hub" }, answer(log)),
   ];
 }
+// The list down the left: one log per day, newest first, and a way to start
+// today's. A row is named by how that day's first entry begins, unless the
+// person renamed it. The list folds to a narrow strip, drags to any width, and
+// each row has a menu: pin, rename, delete. Pins, names, the width and the fold
+// are this person's own and are kept in this browser.
+const MONTH = (day) => new Date(day + "T12:00:00").toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+function listGroup(day, today) {
+  if (day === today) return "Today";
+  const w = new Date(); w.setDate(w.getDate() - 7);
+  return day > localDay(w.toISOString()) ? "Last 7 days" : MONTH(day);
+}
+function icon(d, size) {
+  const ns = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(ns, "svg");
+  for (const [k, v] of Object.entries({ viewBox: "0 0 24 24", width: String(size || 16), height: String(size || 16), fill: "none", stroke: "currentColor", "stroke-width": "2", "stroke-linecap": "round", "stroke-linejoin": "round", "aria-hidden": "true" })) svg.setAttribute(k, v);
+  const path = document.createElementNS(ns, "path");
+  path.setAttribute("d", d);
+  svg.append(path);
+  return svg;
+}
+const ICON = {
+  plus: "M12 5v14M5 12h14",
+  fold: "M4 5h16v14H4zM9 5v14",
+  dots: "M5 12h.01M12 12h.01M19 12h.01",
+  search: "M11 18a7 7 0 1 1 0-14 7 7 0 0 1 0 14zM20 20l-4-4",
+};
+const SIDE_MIN = 200, SIDE_MAX = 440, SIDE_DEFAULT = 264;
+const sideKey = () => "log-side:" + (state.me.id || "shared");
+function side() {
+  let v = null;
+  try { v = JSON.parse(localStorage.getItem(sideKey()) || "null"); } catch { v = null; }
+  v = v && typeof v === "object" ? v : {};
+  return { pins: Array.isArray(v.pins) ? v.pins : [], titles: v.titles && typeof v.titles === "object" ? v.titles : {}, width: Number(v.width) || SIDE_DEFAULT, mini: Boolean(v.mini) };
+}
+function setSide(patch) {
+  try { localStorage.setItem(sideKey(), JSON.stringify({ ...side(), ...patch })); } catch { /* storage may be blocked */ }
+}
+let menuDay = null;      // the row whose menu is open
+let renameDay = null;    // the row being renamed
+let armedDay = null;     // the row whose Delete was pressed once
+let sideQuery = "";
+document.addEventListener("click", (e) => {
+  if (menuDay && !(e.target instanceof Element && e.target.closest(".logside__menu, .logside__more"))) { menuDay = null; armedDay = null; changed(); }
+});
+function dragWidth(aside) {
+  return (e) => {
+    e.preventDefault();
+    const left = aside.getBoundingClientRect().left;
+    const move = (ev) => { aside.style.width = Math.max(SIDE_MIN, Math.min(SIDE_MAX, ev.clientX - left)) + "px"; };
+    const up = () => {
+      window.removeEventListener("pointermove", move);
+      window.removeEventListener("pointerup", up);
+      document.body.classList.remove("is-sizing");
+      setSide({ width: Math.round(aside.getBoundingClientRect().width) });
+    };
+    document.body.classList.add("is-sizing");
+    window.addEventListener("pointermove", move);
+    window.addEventListener("pointerup", up);
+  };
+}
+function logList(days, today, open) {
+  const st = side();
+  const go = (day) => () => { selDay = day; lastThread = null; menuDay = null; changed(); };
+  const fold = (mini) => () => { setSide({ mini }); changed(); };
+  if (st.mini) {
+    return h("aside", { class: "logside logside--mini", "aria-label": "Your logs" },
+      h("button", { class: "logside__icon", type: "button", "aria-label": "Show your logs", title: "Show your logs", onclick: fold(false) }, icon(ICON.fold, 18)),
+      h("button", { class: "logside__icon", type: "button", "aria-label": "New log", title: "New log", onclick: go(null) }, icon(ICON.plus, 18)));
+  }
+  const order = [...days.keys()].sort().reverse();
+  const auto = (list) => { const t = String(list[0].body || "").replace(/\s+/g, " ").trim(); return t.length > 44 ? t.slice(0, 43).trimEnd() + "…" : t || "Log"; };
+  const title = (day) => st.titles[day] || auto(days.get(day));
+  const q = sideQuery.trim().toLowerCase();
+  const found = (day) => !q || title(day).toLowerCase().includes(q) || dayLabel(day).toLowerCase().includes(q) || days.get(day).some((l) => String(l.body || "").toLowerCase().includes(q));
+  const shown = order.filter(found);
+  const pins = st.pins.filter((d) => days.has(d));
+  const groups = new Map();
+  if (q) groups.set(shown.length ? "Results" : "No log matches", shown);
+  else {
+    const pinnedNow = shown.filter((d) => pins.includes(d));
+    if (pinnedNow.length) groups.set("Pinned", pinnedNow);
+    for (const day of shown.filter((d) => !pins.includes(d))) { const g = listGroup(day, today); groups.set(g, [...(groups.get(g) || []), day]); }
+  }
+  const pin = (day) => () => { setSide({ pins: pins.includes(day) ? pins.filter((d) => d !== day) : [...pins, day] }); menuDay = null; changed(); };
+  const rename = (day) => () => { renameDay = day; menuDay = null; changed(); const i = document.getElementById("log-rename"); if (i) { i.focus(); i.select(); } };
+  const saveName = (day, text) => {
+    if (renameDay !== day) return;
+    renameDay = null;
+    const titles = { ...st.titles };
+    const t = text.trim();
+    if (t && t !== auto(days.get(day))) titles[day] = t.slice(0, 80); else delete titles[day];
+    setSide({ titles });
+    changed();
+  };
+  const del = (day) => () => {
+    if (armedDay !== day) { armedDay = day; changed(); return; }
+    const entries = days.get(day);
+    armedDay = null; menuDay = null;
+    if (selDay === day) selDay = null;
+    const titles = { ...st.titles }; delete titles[day];
+    setSide({ pins: pins.filter((d) => d !== day), titles });
+    for (const l of entries) { picks.delete(l.id); remove("logs", l.id); }
+  };
+  const row = (day) => {
+    const entries = days.get(day);
+    const n = entries.length === 1 ? "1 entry" : entries.length + " entries";
+    const waiting = entries.some((l) => l.status !== "applied");
+    if (renameDay === day) {
+      const input = h("input", { class: "logside__rename", id: "log-rename", "aria-label": "Name this log", maxlength: "80" });
+      input.value = title(day);
+      input.addEventListener("keydown", (e) => { if (e.key === "Enter") saveName(day, input.value); else if (e.key === "Escape") { renameDay = null; changed(); } });
+      input.addEventListener("blur", () => saveName(day, input.value));
+      return h("div", { class: "logside__item" }, input);
+    }
+    return h("div", { class: "logside__item" + (menuDay === day ? " is-open" : "") },
+      h("button", { class: "logside__row", type: "button", "aria-current": String(day === open), onclick: go(day === today ? null : day) },
+        h("span", { class: "logside__title" }, title(day)),
+        h("span", { class: "logside__sub" }, dayLabel(day) + " · " + n,
+          waiting && h("span", { class: "logside__dot", title: "Something here is waiting for you" }))),
+      h("button", { class: "logside__more", type: "button", "aria-label": "More for this log", "aria-expanded": String(menuDay === day),
+        onclick: () => { menuDay = menuDay === day ? null : day; armedDay = null; changed(); } }, icon(ICON.dots)),
+      menuDay === day && h("div", { class: "logside__menu", role: "menu" },
+        h("button", { type: "button", role: "menuitem", onclick: pin(day) }, pins.includes(day) ? "Unpin" : "Pin"),
+        h("button", { type: "button", role: "menuitem", onclick: rename(day) }, "Rename"),
+        h("button", { class: "red", type: "button", role: "menuitem", onclick: del(day) }, armedDay === day ? `Click again to delete ${n}` : "Delete")));
+  };
+  const search = h("input", { class: "logside__search", id: "log-search", type: "search", placeholder: "Search your logs", "aria-label": "Search your logs", autocomplete: "off" });
+  search.value = sideQuery;
+  search.addEventListener("input", () => {
+    sideQuery = search.value;
+    changed();   // the redraw is immediate, so the new box can take the caret straight away
+    const i = document.getElementById("log-search");
+    if (i) { i.focus(); i.setSelectionRange(i.value.length, i.value.length); }
+  });
+  const aside = h("aside", { class: "logside", "aria-label": "Your logs", style: `width:${Math.max(SIDE_MIN, Math.min(SIDE_MAX, st.width))}px` },
+    h("div", { class: "logside__top" },
+      h("button", { class: "logside__new", type: "button", "aria-current": String(open === today && !days.has(today)), onclick: go(null) }, icon(ICON.plus), "New log"),
+      h("button", { class: "logside__icon", type: "button", "aria-label": "Hide your logs", title: "Hide your logs", onclick: fold(true) }, icon(ICON.fold, 18))),
+    order.length > 0 && h("div", { class: "logside__find" }, icon(ICON.search, 15), search),
+    [...groups].map(([name, list]) => h("div", { class: "logside__group" },
+      h("div", { class: "logside__label" }, name), list.map(row))),
+    order.length === 0 && h("div", { class: "logside__none muted small" }, "Your logs will list here, one per day."));
+  const grip = h("div", { class: "logside__grip", role: "separator", "aria-orientation": "vertical", "aria-label": "Drag to change the width; double-click for the usual width", title: "Drag to change the width" });
+  grip.addEventListener("pointerdown", dragWidth(aside));
+  grip.addEventListener("dblclick", () => { setSide({ width: SIDE_DEFAULT }); changed(); });
+  aside.append(grip);
+  return aside;
+}
 export function logChat() {
-  if (!state.me.id) return h("div", { class: "chat chat--hero" }, h("div", { class: "chat__hero" }, logPanel({ device: "hub" })));
+  if (!state.me.id) return h("div", { class: "logwrap" }, h("div", { class: "logmain" }, h("div", { class: "chat chat--hero" }, h("div", { class: "chat__hero" }, logPanel({ device: "hub" })))));
   const logs = mine().reverse();   // oldest first, as a conversation reads
   const today = todayISO();
-  const open = logs.some((l) => l.status !== "applied" || localDay(l.created_at) === today);
-  if (!open && !showEarlier) {
-    const first = String(state.me.name || "").trim().split(/\s+/)[0];
-    return h("div", { class: "chat chat--hero" },
-      h("div", { class: "chat__hero" },
-        h("h1", { class: "chat__hello" }, first ? `What did you do today, ${first}?` : "What did you do today?"),
-        composer("hub", "Say it however it comes."),
-        logs.length > 0 && h("button", { class: "quiet chat__earlier", type: "button", onclick: () => { showEarlier = true; changed(); } }, "Earlier entries")));
-  }
   const days = new Map();
   for (const l of logs) { const d = localDay(l.created_at); days.set(d, [...(days.get(d) || []), l]); }
+  const day = selDay && days.has(selDay) ? selDay : today;
+  const list = days.get(day) || [];
+  const side = logList(days, today, day);
+  if (!list.length) {
+    const first = String(state.me.name || "").trim().split(/\s+/)[0];
+    return h("div", { class: "logwrap" }, side, h("div", { class: "logmain" },
+      h("div", { class: "chat chat--hero" },
+        h("div", { class: "chat__hero" },
+          h("h1", { class: "chat__hello" }, first ? `What did you do today, ${first}?` : "What did you do today?"),
+          composer("hub", "Say it however it comes.")))));
+  }
   // Stay at the latest turn: on arriving, and whenever the conversation moves on.
-  const key = logs.map((l) => l.id + l.status + (busy.has(l.id) ? "~" : "")).join("|");
+  const key = day + ":" + list.map((l) => l.id + l.status + (busy.has(l.id) ? "~" : "")).join("|");
   if (key !== lastThread) {
     lastThread = key;
     requestAnimationFrame(() => window.scrollTo(0, document.documentElement.scrollHeight));
   }
-  return h("div", { class: "chat" },
-    h("div", { class: "chat__thread" },
-      [...days].map(([day, list]) => [h("div", { class: "chat__day" }, dayLabel(day)), list.map(turn)])),
-    h("div", { class: "chat__dock" }, composer("hub", "What else happened?")));
+  return h("div", { class: "logwrap" }, side, h("div", { class: "logmain" },
+    h("div", { class: "chat" },
+      h("div", { class: "chat__thread" }, h("div", { class: "chat__day" }, dayLabel(day)), list.map(turn)),
+      h("div", { class: "chat__dock" }, day === today
+        ? composer("hub", "What else happened?")
+        // An entry is always dated when it is written, so an earlier day is read, not added to.
+        : h("div", { class: "chat__past" },
+          h("span", { class: "muted" }, "This is the log for " + fmtDate(day) + "."),
+          h("button", { class: "btn btn--small", type: "button", onclick: () => { selDay = null; lastThread = null; changed(); } }, "New log"))))));
 }
 
 // ---------- the hub's ways in ----------
