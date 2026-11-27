@@ -1,6 +1,7 @@
 // The side panels for a person, a deal, a project and a contact, plus the pieces several
 // screens share: task lists, notes, and the add/edit form for any record.
 
+import { slashIn } from "./slash.js";
 import {
   h, avatar, kv, block, drawerFrame, openDrawer, openDialog, closeDrawer, toast, inlineEdit, quickAdd,
   fmtDate, fmtDateTime, fmtRange, daysSince, todayISO, ago,
@@ -180,7 +181,7 @@ function notesBlock(type, id) {
     notes.length > 0 && h("div", { class: "notes-up" }, [...notes].reverse().map((n) => h("div", { class: "note" },
       h("div", { class: "prose" }, n.body),
       noteMeta(n)))),
-    quickAdd(`note-${type}-${id}`, "Add a note", (body) => addNote(type, id, body)));
+    slashIn(quickAdd(`note-${type}-${id}`, "Add a note", (body) => addNote(type, id, body))));
 }
 
 function tasksBlock(tasks, idKey, defaults, opts) {

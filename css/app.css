@@ -1113,3 +1113,15 @@ button.tidy__title:hover { text-decoration: underline; text-underline-offset: 3p
 
 /* More, all, or back to the first few: side by side under a list. */
 .morerow { display: flex; flex-wrap: wrap; gap: 4px 18px; }
+
+/* Slash commands: the list that opens when "/" is typed in a text box. */
+.slash { position: fixed; z-index: 80; background: var(--bg); border: 1px solid var(--line-2); border-radius: 14px; box-shadow: 0 14px 44px rgba(0, 0, 0, 0.16); overflow: hidden; }
+.slash__list { max-height: min(320px, 46vh); overflow-y: auto; padding: 6px; display: flex; flex-direction: column; }
+.slash__item { display: flex; justify-content: space-between; align-items: baseline; gap: 16px; width: 100%; padding: 8px 12px; border-radius: 9px; text-align: left; font-size: 15px; }
+.slash__item:hover, .slash__item[aria-selected="true"] { background: var(--soft-2); }
+.slash__label { font-weight: 500; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.slash__sub { flex: none; max-width: 45%; font-size: 13px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* A record's name inside a text box, in blue. The copy of the text sits behind the box. */
+.slashback { position: absolute; box-sizing: border-box; margin: 0; border: 0 solid transparent; overflow: hidden; pointer-events: none; overflow-wrap: break-word; }
+.slashname { color: #2B55C9; background: #E6EDFF; border-radius: 5px; box-shadow: 0 0 0 2px #E6EDFF; font: inherit; }

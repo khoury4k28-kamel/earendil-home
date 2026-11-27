@@ -4,6 +4,7 @@
 // outside the page so a redraw never interrupts typing. The text is each
 // person's own and is kept in this browser only: it is not sent anywhere.
 
+import { withSlash } from "./slash.js";
 import { h } from "./ui.js";
 import { state } from "./store.js";
 
@@ -80,6 +81,7 @@ function paint() {
 }
 function build() {
   area = h("textarea", { class: "sticky__text", id: "sticky-text", placeholder: "Write anything", "aria-label": "Sticky note", spellcheck: "true" });
+  withSlash(area);
   area.addEventListener("input", () => write(noteKey(), area.value));
   area.addEventListener("keydown", (e) => { if (e.key === "Escape") setSize("closed"); });
   tab = h("button", { class: "sticky__tab", type: "button", onclick: () => setSize("open", true) }, "Note");

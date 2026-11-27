@@ -4,6 +4,7 @@
 // its tasks, the subtasks under each, and how far along they are. Home only
 // gathers from here.
 
+import { slashIn } from "../slash.js";
 import { h, refresh, toast, ago, quickAdd, fmtDate, fmtDateTime, fmtRange, plural, avatar, kv } from "../ui.js";
 import { state, create, update, personName, byId, sortByName, notesFor, addNote, fileUrl, projectsForDeal } from "../store.js";
 import { pinButton, isPinned } from "../pins.js";
@@ -329,7 +330,7 @@ function notesBlock(type, id) {
     h("div", { class: "notes-up" }, notes.slice(0, 5).reverse().map((n) => h("div", { class: "note" },
       h("div", { class: "prose" }, n.body),
       noteMeta(n)))),
-    quickAdd(`wk-note-${type}-${id}`, "Add a note", (body) => addNote(type, id, body)));
+    slashIn(quickAdd(`wk-note-${type}-${id}`, "Add a note", (body) => addNote(type, id, body))));
 }
 function aboutBlock(w) {
   const r = w.rec;

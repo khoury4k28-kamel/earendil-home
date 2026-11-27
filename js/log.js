@@ -16,6 +16,7 @@ import {
 } from "./store.js";
 import { describe, perform, stillOpen, rec, nameOf } from "./actions.js";
 import { canDictate, startDictation } from "./dictate.js";
+import { withSlash } from "./slash.js";
 
 const MAX = 8000;
 export const logReady = () => state.logsReady;
@@ -249,6 +250,7 @@ function composer(device, hint) {
     "aria-label": "Log entry", maxlength: String(MAX * 2),
   });
   text.value = draft;
+  withSlash(text);   // "/" names a project, task, contact or person exactly
   const send = h("button", { class: "sendbtn", type: "button", "aria-label": "Send", title: "Send", onclick: () => save(device) }, sendIcon());
   const mark = () => send.classList.toggle("is-ready", Boolean(text.value.trim()));
   mark();
