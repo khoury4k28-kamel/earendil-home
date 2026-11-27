@@ -72,7 +72,7 @@ function card(d, big, pinned) {
 
 // ---------- adding and changing ----------
 const AUDIENCES = Object.entries(AUDIENCE).map(([value, [label]]) => ({ value, label }));
-const categories = () => [...new Set(["Pitch decks", "Partnerships", "Product", "Legal", "Visuals", ...state.documents.map((d) => d.category).filter(Boolean)])];
+const categories = () => [...new Set(["Pitch decks", "Partnerships", "Product", "Visuals", ...state.documents.map((d) => d.category).filter(Boolean)])];
 function categoryList() {
   const id = "doc-categories";
   document.getElementById(id)?.remove();
@@ -122,7 +122,7 @@ function addDialog(first) {
   const prompt = h("div", { class: "drop__prompt" }, h("b", null, "Choose a file"), h("span", { class: "muted" }, "or drop one here. PDF or picture, up to 50 MB."));
   const drop = h("button", { class: "drop", type: "button" }, preview, prompt);
   const title = h("input", { class: "input", id: "doc-title", type: "text", autocomplete: "off" });
-  const category = h("input", { class: "input", id: "doc-category", type: "text", autocomplete: "off", list: categoryList(), placeholder: "Pitch decks, Product, Legal…" });
+  const category = h("input", { class: "input", id: "doc-category", type: "text", autocomplete: "off", list: categoryList(), placeholder: "Pitch decks, Product, Visuals…" });
   const audience = h("select", { class: "select", id: "doc-audience" }, AUDIENCES.map((o) => h("option", { value: o.value }, o.label)));
   const note = h("textarea", { class: "textarea", id: "doc-note", placeholder: "One line on what it is or when to use it" });
   const live = h("input", { class: "input", id: "doc-live", type: "url", autocomplete: "off", placeholder: "https://" });
