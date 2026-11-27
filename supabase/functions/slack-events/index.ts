@@ -27,19 +27,63 @@
 //   SLACK_BOT_TOKEN        lets the function look up who wrote a message and where
 //   HUB_SLACK_EMAIL        the function's own hub account
 //   HUB_SLACK_PASSWORD
-//   ANTHROPIC_API_KEY      the reader
+//   XAI_API_KEY            the reader's key, from xAI's console
+//   READER_MODEL           optional: another Grok model than the one named below
 //   HUB_PUBLISHABLE_KEY    only if the logs say "public key not set": the project's Publishable key
 // Turn "Verify JWT" off for this function: Slack does not sign in, it signs
 // each call, and that signature is checked first thing.
 
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
-import Anthropic from "npm:@anthropic-ai/sdk@1.14.0";
-import { zodOutputFormat } from "npm:@anthropic-ai/sdk@1.14.0/helpers/zod";
 import { z } from "npm:zod@^3.25.0";
 
-const MODEL = "claude-opus-5-5";
 const MAX_TEXT = 4000;
 const STAGES = ["lead", "conversation", "negotiating", "signed", "closed"] as const;
+
+// ---------- the reader: Grok, through xAI's API ----------
+// One plain web call, no library. "store: false" asks xAI not to keep the
+// request or the answer on its side. The model can be changed without editing
+// this file, by setting the secret READER_MODEL.
+const READER_URL = "https://api.x.ai/v1/responses";
+const MODEL = Deno.env.get("READER_MODEL") || "grok-4.7";
+
+// The shape of the answer, in the form the reader is held to.
+const str = { type: "string" };
+const orNull = (s: unknown) => ({ anyOf: [s, { type: "null" }] });
+const oneOf = (values: readonly string[]) => ({ type: "string", enum: [...values] });
+const list = (items: unknown) => ({ type: "array", items });
+const obj = (properties: Record<string, unknown>) => ({ type: "object", properties, required: Object.keys(properties), additionalProperties: false });
+
+// What went wrong, as a short code: key_refused, busy, declined, unreadable, failed.
+class ReaderError extends Error {
+  constructor(public code: string, public status = 0) { super(code); }
+}
+async function ask(key: string, name: string, schema: unknown, system: string, parts: string[]): Promise<unknown> {
+  let res: Response;
+  try {
+    res = await fetch(READER_URL, {
+      method: "POST",
+      headers: { Authorization: "Bearer " + key, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: MODEL,
+        store: false,
+        input: [{ role: "system", content: system }, { role: "user", content: parts.join("\n\n") }],
+        text: { format: { type: "json_schema", name, schema, strict: true } },
+      }),
+      signal: AbortSignal.timeout(120_000),
+    });
+  } catch { throw new ReaderError("failed"); }
+  if (res.status === 401 || res.status === 403) throw new ReaderError("key_refused", res.status);
+  if (res.status === 429) throw new ReaderError("busy", res.status);
+  if (!res.ok) throw new ReaderError("failed", res.status);
+  let data: { status?: string; output?: { type?: string; content?: { type?: string; text?: string }[] }[] };
+  try { data = await res.json(); } catch { throw new ReaderError("unreadable"); }
+  const said = (data.output || []).filter((o) => o.type === "message").flatMap((o) => o.content || []);
+  if (said.some((c) => c.type === "refusal")) throw new ReaderError("declined");
+  const text = said.filter((c) => c.type === "output_text").map((c) => c.text || "").join("");
+  if (data.status === "incomplete" || !text) throw new ReaderError("unreadable");
+  try { return JSON.parse(text); } catch { throw new ReaderError("unreadable"); }
+}
+
 
 declare const EdgeRuntime: { waitUntil(p: Promise<unknown>): void } | undefined;
 
@@ -215,6 +259,17 @@ const Reading = z.object({
   })),
 });
 type ReadingT = z.infer<typeof Reading>;
+// The same shape for the reader. Keep the two in step.
+const READING_SHAPE = obj({
+  notes: list(obj({ text: str, about_type: oneOf(["deal", "project", "contact"]), about_id: str })),
+  touches: list(obj({ target_type: oneOf(["deal", "contact"]), target_id: str, date: orNull(str) })),
+  suggestions: list(obj({
+    type: oneOf(["complete_task", "add_task", "move_stage", "new_contact"]),
+    target_type: oneOf(["deal", "project", "task", "none"]),
+    target_id: orNull(str), date: orNull(str), title: orNull(str), stage: orNull(oneOf(STAGES)),
+    name: orNull(str), organisation: orNull(str), why: str,
+  })),
+});
 
 const SYSTEM = `You read one message from a team's Slack channel and work out whether it means anything for the team's shared tracker of deals, projects, tasks and contacts.
 
@@ -298,7 +353,7 @@ function clean(r: ReadingT, rec: Records, day: string) {
 }
 
 async function handle(ev: SlackEvent) {
-  const key = Deno.env.get("ANTHROPIC_API_KEY");
+  const key = Deno.env.get("XAI_API_KEY");
   if (!key) { console.error("slack: reader not set up"); return; }
 
   // Only the team's own people are read. Someone whose Slack address is not on
@@ -344,32 +399,17 @@ async function handle(ev: SlackEvent) {
     contacts: records.contacts,
   };
 
-  const client = new Anthropic({ apiKey: key });
   let reading;
   try {
-    const response = await client.messages.parse({
-      model: MODEL,
-      max_tokens: 16000,
-      system: SYSTEM,
-      output_config: { effort: "low", format: zodOutputFormat(Reading) },
-      messages: [{
-        role: "user",
-        content: [
-          { type: "text", text: "The tracker's records:\n" + JSON.stringify(forReader) },
-          { type: "text", text: `Written on ${day} by ${author}.` + (earlier.length ? "\nEarlier messages, for context only:\n<earlier>\n" + earlier.join("\n") + "\n</earlier>" : "") },
-          { type: "text", text: "The message:\n<message>\n" + text + "\n</message>" },
-        ],
-      }],
-    });
-    if (response.stop_reason === "refusal" || response.stop_reason === "max_tokens" || !response.parsed_output) {
-      console.error("slack: not read", response.stop_reason);
-      return;
-    }
-    reading = clean(response.parsed_output, records, day);
+    const answer = Reading.safeParse(await ask(key, "reading", READING_SHAPE, SYSTEM, [
+      "The tracker's records:\n" + JSON.stringify(forReader),
+      `Written on ${day} by ${author}.` + (earlier.length ? "\nEarlier messages, for context only:\n<earlier>\n" + earlier.join("\n") + "\n</earlier>" : ""),
+      "The message:\n<message>\n" + text + "\n</message>",
+    ]));
+    if (!answer.success) { console.error("slack: not read", "shape"); return; }
+    reading = clean(answer.data, records, day);
   } catch (err) {
-    if (err instanceof Anthropic.AuthenticationError) console.error("slack: reader key refused");
-    else if (err instanceof Anthropic.RateLimitError) console.error("slack: reader busy");
-    else if (err instanceof Anthropic.APIError) console.error("slack: reader error", err.status);
+    if (err instanceof ReaderError) console.error("slack: reader", err.code, err.status || "");
     else console.error("slack: reader error", err instanceof Error ? err.name : "unknown");
     return;
   }

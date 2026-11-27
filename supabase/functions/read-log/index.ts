@@ -12,18 +12,63 @@
 // can only touch that person's own entry.
 //
 // Needs one secret, set in the project's Edge Function settings:
-//   ANTHROPIC_API_KEY
+//   XAI_API_KEY          the reader's key, from xAI's console
+// Optional:
+//   READER_MODEL         another Grok model than the one named below
 // and, only if its logs say "public key not set":
 //   HUB_PUBLISHABLE_KEY   the project's Publishable key
 
 import { createClient } from "npm:@supabase/supabase-js@2";
-import Anthropic from "npm:@anthropic-ai/sdk@1.14.0";
-import { zodOutputFormat } from "npm:@anthropic-ai/sdk@1.14.0/helpers/zod";
 import { z } from "npm:zod@^3.25.0";
 
-const MODEL = "claude-opus-5-5";
 const MAX_ENTRY = 8000;
 const STAGES = ["lead", "conversation", "negotiating", "signed", "closed"] as const;
+
+// ---------- the reader: Grok, through xAI's API ----------
+// One plain web call, no library. "store: false" asks xAI not to keep the
+// request or the answer on its side. The model can be changed without editing
+// this file, by setting the secret READER_MODEL.
+const READER_URL = "https://api.x.ai/v1/responses";
+const MODEL = Deno.env.get("READER_MODEL") || "grok-4.7";
+
+// The shape of the answer, in the form the reader is held to.
+const str = { type: "string" };
+const orNull = (s: unknown) => ({ anyOf: [s, { type: "null" }] });
+const oneOf = (values: readonly string[]) => ({ type: "string", enum: [...values] });
+const list = (items: unknown) => ({ type: "array", items });
+const obj = (properties: Record<string, unknown>) => ({ type: "object", properties, required: Object.keys(properties), additionalProperties: false });
+
+// What went wrong, as a short code: key_refused, busy, declined, unreadable, failed.
+class ReaderError extends Error {
+  constructor(public code: string, public status = 0) { super(code); }
+}
+async function ask(key: string, name: string, schema: unknown, system: string, parts: string[]): Promise<unknown> {
+  let res: Response;
+  try {
+    res = await fetch(READER_URL, {
+      method: "POST",
+      headers: { Authorization: "Bearer " + key, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: MODEL,
+        store: false,
+        input: [{ role: "system", content: system }, { role: "user", content: parts.join("\n\n") }],
+        text: { format: { type: "json_schema", name, schema, strict: true } },
+      }),
+      signal: AbortSignal.timeout(120_000),
+    });
+  } catch { throw new ReaderError("failed"); }
+  if (res.status === 401 || res.status === 403) throw new ReaderError("key_refused", res.status);
+  if (res.status === 429) throw new ReaderError("busy", res.status);
+  if (!res.ok) throw new ReaderError("failed", res.status);
+  let data: { status?: string; output?: { type?: string; content?: { type?: string; text?: string }[] }[] };
+  try { data = await res.json(); } catch { throw new ReaderError("unreadable"); }
+  const said = (data.output || []).filter((o) => o.type === "message").flatMap((o) => o.content || []);
+  if (said.some((c) => c.type === "refusal")) throw new ReaderError("declined");
+  const text = said.filter((c) => c.type === "output_text").map((c) => c.text || "").join("");
+  if (data.status === "incomplete" || !text) throw new ReaderError("unreadable");
+  try { return JSON.parse(text); } catch { throw new ReaderError("unreadable"); }
+}
+
 
 // Sign-in is checked below with the caller's token, not with cookies, so any
 // origin may call: without a team member's token nothing is returned.
@@ -56,6 +101,17 @@ const Proposal = z.object({
   unmatched: z.array(z.string()),
 });
 type ProposalT = z.infer<typeof Proposal>;
+// The same shape for the reader. Keep the two in step.
+const PROPOSAL_SHAPE = obj({
+  ideas: list(obj({ text: str, about_type: oneOf(["deal", "project", "contact", "none"]), about_id: orNull(str) })),
+  actions: list(obj({
+    type: oneOf(["log_contact", "complete_task", "add_task", "move_stage", "new_contact"]),
+    target_type: oneOf(["deal", "project", "contact", "task", "none"]),
+    target_id: orNull(str), date: orNull(str), title: orNull(str), stage: orNull(oneOf(STAGES)),
+    name: orNull(str), organisation: orNull(str), why: str,
+  })),
+  unmatched: list(str),
+});
 
 const SYSTEM = `You read one entry from a person's private work log and work out what it means for their team's shared tracker.
 
@@ -163,7 +219,7 @@ Deno.serve(async (req) => {
   };
   if (log.body.length > MAX_ENTRY) return fail(413, "too_long");
 
-  const key = Deno.env.get("ANTHROPIC_API_KEY");
+  const key = Deno.env.get("XAI_API_KEY");
   if (!key) return fail(503, "not_set_up");
 
   const [deals, projects, tasks, contacts] = await Promise.all([
@@ -194,30 +250,21 @@ Deno.serve(async (req) => {
     contact: new Set(contacts.data.map((c) => c.id)),
   };
 
-  const client = new Anthropic({ apiKey: key });
   let proposal;
   try {
-    const response = await client.messages.parse({
-      model: MODEL,
-      max_tokens: 16000,
-      system: SYSTEM,
-      output_config: { effort: "low", format: zodOutputFormat(Proposal) },
-      messages: [{
-        role: "user",
-        content: [
-          { type: "text", text: "Records the person can see:\n" + JSON.stringify(records) },
-          { type: "text", text: "The log entry:\n<entry>\n" + log.body + "\n</entry>" },
-        ],
-      }],
-    });
-    if (response.stop_reason === "refusal") return fail(422, "declined");
-    if (response.stop_reason === "max_tokens" || !response.parsed_output) return fail(502, "unreadable");
-    proposal = clean(response.parsed_output, ids, today);
+    const answer = Proposal.safeParse(await ask(key, "proposal", PROPOSAL_SHAPE, SYSTEM, [
+      "Records the person can see:\n" + JSON.stringify(records),
+      "The log entry:\n<entry>\n" + log.body + "\n</entry>",
+    ]));
+    if (!answer.success) return fail(502, "unreadable");
+    proposal = clean(answer.data, ids, today);
   } catch (err) {
-    if (err instanceof Anthropic.AuthenticationError) return fail(503, "not_set_up");
-    if (err instanceof Anthropic.RateLimitError) return fail(429, "busy");
-    if (err instanceof Anthropic.APIError) { console.error("reader error", err.status); return fail(502, "reader_failed"); }
-    console.error("reader error", err instanceof Error ? err.name : "unknown");
+    const code = err instanceof ReaderError ? err.code : "failed";
+    if (code === "key_refused") return fail(503, "not_set_up");
+    if (code === "busy") return fail(429, "busy");
+    if (code === "declined") return fail(422, "declined");
+    if (code === "unreadable") return fail(502, "unreadable");
+    console.error("reader error", err instanceof ReaderError ? err.status : "unknown");
     return fail(502, "reader_failed");
   }
 
